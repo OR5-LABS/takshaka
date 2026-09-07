@@ -430,68 +430,10 @@ module takshaka_core
     else if (fx_valid && d_is_md && !md_busy && !md_inflight) md_inflight <= 1'b1;
   end
 
-  // ---- CSR -----------------------------------------------------------------
-  wire  [1:0]      csr_fn = funct3[1:0];
-  wire             csr_imm_mode = funct3[2];
-  wire  [XLEN-1:0] csr_src = csr_imm_mode ? {27'b0, rs1} : op1;
-  logic [XLEN-1:0] csr_rdata, csr_wval;
-  // effective CSR read: trigger CSRs (0x7A0..0x7A2/0x7A4) come from the local
-  // trigger file, N user CSRs (ustatus/uie/utvec/... + medeleg) from the local N
-  // overlay, everything else from the shared takshaka_csr. (is_trig_csr/is_ucsr and
-  // their rdata are module-level nets declared in the blocks below.)
-  wire [XLEN-1:0] csr_rd_eff = is_trig_csr ? trig_csr_rdata :
-                               is_ucsr     ? ucsr_rdata     : csr_rdata;
-  always_comb unique case (csr_fn)
-    2'b01:  csr_wval = csr_src;
-    2'b10:  csr_wval = csr_rd_eff |  csr_src;
-    2'b11:  csr_wval = csr_rd_eff & ~csr_src;
-    default: csr_wval = csr_rd_eff;
-  endcase
-  wire csr_do_write = d_is_csr &&
-       !((csr_fn != 2'b01) && (csr_imm_mode ? (rs1==5'd0) : (rs1==5'd0)));
-
-  // ---- privilege + PMP (security: M/U memory isolation) --------------------
-  // SECURE-only. The shared takshaka_csr owns priv/PMP architectural state; two
-  // combinational takshaka_pmp checkers validate the fetch address (fx_pc) and the
-  // load/store address (alu_y) — both known here in X, exactly where every other
-  // synchronous trap resolves. Default (SECURE=0) ties everything off: priv stays
-  // M, no PMP logic, behaviour byte-identical.
-  localparam int NPMP = 8;
-  wire [1:0]   cur_priv;
-  wire         fetch_m, data_m, mmwp_w;
-  wire [127:0] pmpcfg_w;
-  wire [511:0] pmpaddr_w;
-  wire acc_fetch_fault, acc_load_fault, acc_store_fault;
-  // Privileged-operation faults from U-mode (all illegal-instruction traps):
-  //  - access to an M-mode CSR (address bits [9:8]==11 => M-only)
-  //  - MRET (a trap-return instruction; only legal in M-mode)
-  // Checked here, not in the shared CSR/decode leaf cells, so they stay untouched.
-  wire priv_low        = SECURE && (cur_priv != 2'b11);
-  wire csr_priv_fault  = priv_low && d_is_csr && (sys_imm12[9:8] == 2'b11);
-  wire mret_priv_fault = priv_low && d_is_mret;
-  wire priv_fault      = csr_priv_fault | mret_priv_fault;
-  generate if (SECURE) begin : g_pmp
-    wire pmp_fetch_fault, pmp_data_fault;
-    takshaka_pmp #(.NPMP(NPMP)) u_pmp_if (    // instruction-fetch check
-      .cfg(pmpcfg_w[8*NPMP-1:0]), .addrreg(pmpaddr_w[32*NPMP-1:0]),
-      .addr(fx_pc), .priv_m(fetch_m), .mmwp(mmwp_w), .do_r(1'b0), .do_w(1'b0), .do_x(1'b1),
-      .fault(pmp_fetch_fault)
-    );
-    takshaka_pmp #(.NPMP(NPMP)) u_pmp_ls (    // load/store check (post-address)
-      .cfg(pmpcfg_w[8*NPMP-1:0]), .addrreg(pmpaddr_w[32*NPMP-1:0]),
-      .addr(alu_y), .priv_m(data_m), .mmwp(mmwp_w),
-      .do_r(d_mem_re), .do_w(d_mem_we), .do_x(1'b0),
-      .fault(pmp_data_fault)
-    );
-    assign acc_fetch_fault = fx_valid && pmp_fetch_fault;
-    assign acc_load_fault  = fx_valid && d_mem_re && pmp_data_fault;
-    assign acc_store_fault = fx_valid && d_mem_we && pmp_data_fault;
-  end else begin : g_nopmp
-    assign acc_fetch_fault = 1'b0;
-    assign acc_load_fault  = 1'b0;
-    assign acc_store_fault = 1'b0;
-  end endgenerate
-  wire acc_fault = acc_fetch_fault | acc_load_fault | acc_store_fault;
+  // effective CSR address multiplexes normal instruction CSR with debug abstract access
+  wire [11:0] csr_addr_eff = dbg_mode ? dbg_ar_regno : sys_imm12;
+  wire [11:0] u_csr_addr    = csr_addr_eff;   // N user CSRs use the same addr mux
+  wire [11:0] trig_csr_addr = csr_addr_eff;   // trigger CSRs use the same addr mux
 
   // ==========================================================================
   // N-extension: user-level traps (uepc/ucause/utvec/uscratch/utval/ustatus/
@@ -529,7 +471,6 @@ module takshaka_core
   // routed to U). They read/write-back so software sees architectural CSRs.
   logic [XLEN-1:0] uie_r, uip_r;
 
-  wire [11:0] u_csr_addr;   // = csr_addr_eff (assigned in the trap section below)
   wire is_ucsr = USERTRAPS &&
        ((u_csr_addr==CSR_USTATUS)||(u_csr_addr==CSR_UIE)||(u_csr_addr==CSR_UTVEC)||
         (u_csr_addr==CSR_USCRATCH)||(u_csr_addr==CSR_UEPC)||(u_csr_addr==CSR_UCAUSE)||
@@ -586,13 +527,8 @@ module takshaka_core
   logic [XLEN-1:0]          tdata2 [0:NTRIG-1];
   integer                   tg;
 
-  // csr_addr_eff is defined a little further down (it multiplexes the normal
-  // sys_imm12 with the debug abstract-access regno); the trigger CSRs are
-  // reachable through both paths. Declared here so the trap logic below can use
-  // trig_to_exc / trig_to_debug.
-  wire [11:0] trig_csr_addr;                 // = csr_addr_eff (assigned below)
-  wire        is_trig_csr = (trig_csr_addr==CSR_TSELECT)||(trig_csr_addr==CSR_TDATA1)||
-                            (trig_csr_addr==CSR_TDATA2)||(trig_csr_addr==CSR_TINFO);
+  wire is_trig_csr = (trig_csr_addr==CSR_TSELECT)||(trig_csr_addr==CSR_TDATA1)||
+                     (trig_csr_addr==CSR_TDATA2)||(trig_csr_addr==CSR_TINFO);
 
   // trigger CSR read data (overrides the shared csr_rdata for these addresses)
   logic [XLEN-1:0] trig_csr_rdata;
@@ -605,6 +541,70 @@ module takshaka_core
       default    : trig_csr_rdata = '0;
     endcase
   end
+
+  // ---- CSR -----------------------------------------------------------------
+  wire  [1:0]      csr_fn = funct3[1:0];
+  wire             csr_imm_mode = funct3[2];
+  wire  [XLEN-1:0] csr_src = csr_imm_mode ? {27'b0, rs1} : op1;
+  logic [XLEN-1:0] csr_rdata, csr_wval;
+  // effective CSR read: trigger CSRs (0x7A0..0x7A2/0x7A4) come from the local
+  // trigger file, N user CSRs (ustatus/uie/utvec/... + medeleg) from the local N
+  // overlay, everything else from the shared takshaka_csr.
+  wire [XLEN-1:0] csr_rd_eff = is_trig_csr ? trig_csr_rdata :
+                               is_ucsr     ? ucsr_rdata     : csr_rdata;
+  always_comb unique case (csr_fn)
+    2'b01:  csr_wval = csr_src;
+    2'b10:  csr_wval = csr_rd_eff |  csr_src;
+    2'b11:  csr_wval = csr_rd_eff & ~csr_src;
+    default: csr_wval = csr_rd_eff;
+  endcase
+  wire csr_do_write = d_is_csr &&
+       !((csr_fn != 2'b01) && (csr_imm_mode ? (rs1==5'd0) : (rs1==5'd0)));
+  wire [XLEN-1:0] csr_wdata_eff = dbg_mode ? dbg_ar_wdata : csr_wval;
+  wire [XLEN-1:0] trig_wdata = csr_wdata_eff;
+
+  // ---- privilege + PMP (security: M/U memory isolation) --------------------
+  // SECURE-only. The shared takshaka_csr owns priv/PMP architectural state; two
+  // combinational takshaka_pmp checkers validate the fetch address (fx_pc) and the
+  // load/store address (alu_y) — both known here in X, exactly where every other
+  // synchronous trap resolves. Default (SECURE=0) ties everything off: priv stays
+  // M, no PMP logic, behaviour byte-identical.
+  localparam int NPMP = 8;
+  wire [1:0]   cur_priv;
+  wire         fetch_m, data_m, mmwp_w;
+  wire [127:0] pmpcfg_w;
+  wire [511:0] pmpaddr_w;
+  wire acc_fetch_fault, acc_load_fault, acc_store_fault;
+  // Privileged-operation faults from U-mode (all illegal-instruction traps):
+  //  - access to an M-mode CSR (address bits [9:8]==11 => M-only)
+  //  - MRET (a trap-return instruction; only legal in M-mode)
+  // Checked here, not in the shared CSR/decode leaf cells, so they stay untouched.
+  wire priv_low        = SECURE && (cur_priv != 2'b11);
+  wire csr_priv_fault  = priv_low && d_is_csr && (sys_imm12[9:8] == 2'b11);
+  wire mret_priv_fault = priv_low && d_is_mret;
+  wire priv_fault      = csr_priv_fault | mret_priv_fault;
+  generate if (SECURE) begin : g_pmp
+    wire pmp_fetch_fault, pmp_data_fault;
+    takshaka_pmp #(.NPMP(NPMP)) u_pmp_if (    // instruction-fetch check
+      .cfg(pmpcfg_w[8*NPMP-1:0]), .addrreg(pmpaddr_w[32*NPMP-1:0]),
+      .addr(fx_pc), .priv_m(fetch_m), .mmwp(mmwp_w), .do_r(1'b0), .do_w(1'b0), .do_x(1'b1),
+      .fault(pmp_fetch_fault)
+    );
+    takshaka_pmp #(.NPMP(NPMP)) u_pmp_ls (    // load/store check (post-address)
+      .cfg(pmpcfg_w[8*NPMP-1:0]), .addrreg(pmpaddr_w[32*NPMP-1:0]),
+      .addr(alu_y), .priv_m(data_m), .mmwp(mmwp_w),
+      .do_r(d_mem_re), .do_w(d_mem_we), .do_x(1'b0),
+      .fault(pmp_data_fault)
+    );
+    assign acc_fetch_fault = fx_valid && pmp_fetch_fault;
+    assign acc_load_fault  = fx_valid && d_mem_re && pmp_data_fault;
+    assign acc_store_fault = fx_valid && d_mem_we && pmp_data_fault;
+  end else begin : g_nopmp
+    assign acc_fetch_fault = 1'b0;
+    assign acc_load_fault  = 1'b0;
+    assign acc_store_fault = 1'b0;
+  end endgenerate
+  wire acc_fault = acc_fetch_fault | acc_load_fault | acc_store_fault;
 
   // per-slot decode helpers
   function automatic logic slot_en    (input [XLEN-1:0] d1);
@@ -655,34 +655,6 @@ module takshaka_core
   wire trig_to_debug = trig_fire &&  trig_action_w;   // action=1 -> enter debug
   wire trig_to_exc   = trig_fire && !trig_action_w;   // action=0 -> breakpoint exc
 
-  // ---- trigger CSR write + sticky hit0 -------------------------------------
-  // Write-enable is qualified the same way the shared CSR write is: a committing
-  // CSR instruction in normal mode, or a debug abstract CSR write while halted.
-  wire trig_csr_we;   // assigned after csr_do_write / dbg_csr_we visibility (below)
-  always_ff @(posedge clk) begin
-    if (rst) begin
-      tselect <= '0;
-      for (tg = 0; tg < NTRIG; tg = tg + 1) begin
-        tdata1[tg] <= {TTYPE_MC6, 28'd0};   // type=6, all disabled
-        tdata2[tg] <= '0;
-      end
-    end else begin
-      if (trig_csr_we) begin
-        unique case (trig_csr_addr)
-          CSR_TSELECT: if (trig_wdata < NTRIG) tselect <= trig_wdata[$clog2(NTRIG)-1:0];
-          CSR_TDATA1 : tdata1[tselect] <= {TTYPE_MC6, trig_wdata[27:0]}; // force type6
-          CSR_TDATA2 : tdata2[tselect] <= trig_wdata;
-          default    : ;
-        endcase
-      end
-      // sticky hit0 (bit 21) on the slot(s) that fired and were acted upon
-      if (trig_fire) begin
-        for (tg = 0; tg < NTRIG; tg = tg + 1)
-          if (trig_fire_mask[tg]) tdata1[tg][21] <= 1'b1;
-      end
-    end
-  end
-
   // ---- traps ---------------------------------------------------------------
   // illegal (incl. U-mode M-CSR access) | ecall (priv-aware cause) | ebreak |
   // PMP access faults (fetch=1 / load=5 / store=7). A fetch fault takes priority
@@ -727,18 +699,12 @@ module takshaka_core
   // shared (M-mode) trap fires for any non-delegated exception or a taken IRQ
   wire m_trap_set = (ex_trap && !ex_freeze && !deleg_trap) || take_irq;
 
-  // debug abstract CSR access steals the CSR file address/data while halted
-  wire [11:0] csr_addr_eff = dbg_mode ? dbg_ar_regno : sys_imm12;
-  assign trig_csr_addr = csr_addr_eff;               // trigger CSRs use the same addr mux
-  assign u_csr_addr    = csr_addr_eff;               // N user CSRs use the same addr mux
   // the effective CSR write-enable (normal committing CSR instr, or debug write)
   wire csr_we_eff   = dbg_mode ? dbg_csr_we
                               : (fx_valid && csr_do_write && !ex_trap && !ex_freeze);
-  wire [XLEN-1:0] csr_wdata_eff = dbg_mode ? dbg_ar_wdata : csr_wval;
-  // trigger CSR writes are handled by the local trigger file (above); route the
+  // trigger CSR writes are handled by the local trigger file; route the
   // write there when the target is a trigger CSR, and keep it off the shared CSR.
-  assign trig_csr_we = csr_we_eff && is_trig_csr;
-  wire [XLEN-1:0] trig_wdata = csr_wdata_eff;
+  wire trig_csr_we = csr_we_eff && is_trig_csr;
   // N user-CSR writes are handled by the local N block; route them there and keep
   // them off the shared CSR (which returns 0 for these addresses).
   wire ucsr_we = csr_we_eff && is_ucsr;
@@ -750,6 +716,33 @@ module takshaka_core
                         is_trig_csr             ? trig_csr_rdata :
                         is_ucsr                 ? ucsr_rdata :
                         csr_rdata;                            // CSR (addr = regno)
+
+  // ---- trigger CSR write + sticky hit0 -------------------------------------
+  // Write-enable is qualified the same way the shared CSR write is: a committing
+  // CSR instruction in normal mode, or a debug abstract CSR write while halted.
+  always_ff @(posedge clk) begin
+    if (rst) begin
+      tselect <= '0;
+      for (tg = 0; tg < NTRIG; tg = tg + 1) begin
+        tdata1[tg] <= {TTYPE_MC6, 28'd0};   // type=6, all disabled
+        tdata2[tg] <= '0;
+      end
+    end else begin
+      if (trig_csr_we) begin
+        unique case (trig_csr_addr)
+          CSR_TSELECT: if (trig_wdata < NTRIG) tselect <= trig_wdata[$clog2(NTRIG)-1:0];
+          CSR_TDATA1 : tdata1[tselect] <= {TTYPE_MC6, trig_wdata[27:0]}; // force type6
+          CSR_TDATA2 : tdata2[tselect] <= trig_wdata;
+          default    : ;
+        endcase
+      end
+      // sticky hit0 (bit 21) on the slot(s) that fired and were acted upon
+      if (trig_fire) begin
+        for (tg = 0; tg < NTRIG; tg = tg + 1)
+          if (trig_fire_mask[tg]) tdata1[tg][21] <= 1'b1;
+      end
+    end
+  end
 
   // ---- N-extension architectural state: write + delegated-trap + URET -------
   generate if (USERTRAPS) begin : g_ntrap

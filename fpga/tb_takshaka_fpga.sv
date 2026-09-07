@@ -11,7 +11,7 @@ module tb_takshaka_fpga;
   logic [7:0] leds; logic serial_tx; logic [31:0] tohost; logic tohost_we;
 
   takshaka_fpga #(.CLK_HZ(50_000_000), .UART_BAUD(12_500_000),
-                  .MEM_WORDS(4096), .MEMFILE("../../sw/firmware.mem")) dut (
+                  .MEM_WORDS(4096), .MEMFILE("sw/firmware.mem")) dut (
     .clk(clk), .rst(rst),
     .leds(leds), .serial_tx(serial_tx), .serial_rx(1'b1),
     .tohost(tohost), .tohost_we(tohost_we)

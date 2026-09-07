@@ -123,7 +123,8 @@ module takshaka_axi_lite
             addr_q  <= req_addr;
             wdata_q <= req_wdata;
             wstrb_q <= req_wstrb;
-            state   <= req_write ? S_WADDR : S_RADDR;
+            if (req_write) state <= S_WADDR;
+            else           state <= S_RADDR;
           end
         end
         // ---- WRITE: AW and W issued together, each retired on its handshake --

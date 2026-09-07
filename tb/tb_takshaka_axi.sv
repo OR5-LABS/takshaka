@@ -85,7 +85,9 @@ module tb_takshaka_axi;
       // ---- write address ----
       if (awvalid && !awready && !aw_seen) begin awready<=1; end
       else awready<=0;
-      if (awvalid && awready) begin aw_seen<=1; waddr_l<=aw_idx; waddr_err<=aw_is_err; end
+      if (awvalid && awready) begin
+        aw_seen<=1; waddr_l<=aw_idx; waddr_err<=aw_is_err;
+      end
       // ---- write data (inject 1 wait state via wcnt) ----
       if (wvalid && !wready && !w_seen) begin
         if (wcnt==1) begin wready<=1; wcnt<=0; end else wcnt<=wcnt+1;
@@ -94,10 +96,12 @@ module tb_takshaka_axi;
         w_seen<=1;
         // WSTRB-aware byte merge into mem — suppressed on the error address.
         if (!(aw_seen?waddr_err:aw_is_err)) begin
-          if (wstrb[0]) mem[aw_seen?waddr_l:aw_idx][7:0]   <= wdata[7:0];
-          if (wstrb[1]) mem[aw_seen?waddr_l:aw_idx][15:8]  <= wdata[15:8];
-          if (wstrb[2]) mem[aw_seen?waddr_l:aw_idx][23:16] <= wdata[23:16];
-          if (wstrb[3]) mem[aw_seen?waddr_l:aw_idx][31:24] <= wdata[31:24];
+          mem[aw_seen?waddr_l:aw_idx] <= {
+            wstrb[3] ? wdata[31:24] : mem[aw_seen?waddr_l:aw_idx][31:24],
+            wstrb[2] ? wdata[23:16] : mem[aw_seen?waddr_l:aw_idx][23:16],
+            wstrb[1] ? wdata[15:8]  : mem[aw_seen?waddr_l:aw_idx][15:8],
+            wstrb[0] ? wdata[7:0]   : mem[aw_seen?waddr_l:aw_idx][7:0]
+          };
         end
       end
       // ---- B response once both AW and W seen ----
