@@ -20,11 +20,23 @@ SECTIONS {
     . = ALIGN(4);
   } > IMEM
 
+  .data : {
+    _data_start = .;
+    *(.data*)
+    *(.sdata*)
+    . = ALIGN(4);
+    _data_end = .;
+  } > DRAM AT > IMEM
+
+  _data_load = LOADADDR(.data);
+
   .bss (NOLOAD) : {
+    _bss_start = .;
     *(.sbss*)
     *(.bss*)
     *(COMMON)
     . = ALIGN(4);
+    _bss_end = .;
   } > DRAM
 
   _end = .;

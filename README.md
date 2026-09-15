@@ -15,40 +15,15 @@ cores.
 
 ## Highlights
 
-- **ISA:** RV32IMAC — base integer, `M` multiply/divide, `A` atomics,
-  and `C` compressed — plus the **`B` bit-manipulation** set
-  (`Zba`, `Zbb`, `Zbc`, `Zbs`) and **`Zcb`** code-size instructions, with the
-  `Zicsr` control-and-status extension.
-- **Microarchitecture:** 3-stage in-order pipeline
-  (**IF → EX → MEM/WB**) with a full forwarding network — load data produced in
-  the memory stage forwards to a dependent instruction with **no load-use
-  stall**; only multi-cycle operations (multiply/divide, misaligned access,
-  atomics) stall. One instruction retires per cycle in the common case.
-- **Branch prediction:** dynamic **gshare + BTB + RAS** (return-address stack)
-  front end with a halfword-granular, RVC-safe target buffer — mispredicts
-  flush and redirect, everything else flows.
-- **Privilege:** Machine mode always; the **`SECURE`** configuration adds a
-  full **M / U / N** privilege split (including `N` user-level traps).
-- **Memory protection:** optional **8-region PMP** with TOR / NA4 / NAPOT
-  matching, R/W/X permissions, locking, and **ePMP** (`mseccfg`) semantics
-  (`SECURE`).
-- **Debug triggers:** optional hardware **breakpoint / watchpoint** triggers
-  (`mcontrol6`: execute PC-match and load/store address-match) (`SECURE`).
-- **Traps & interrupts:** precise exceptions, `ECALL` / `EBREAK` / illegal-
-  instruction handling, `MRET` / `URET`, and timer / software / external
-  interrupt lines.
-- **Misaligned access:** hardware support for misaligned loads and stores
-  (handled as a two-beat memory sequence).
-- **Debug:** RISC-V External Debug — a JTAG Transport Module plus a Debug
-  Module (halt / resume, single-step, GPR & CSR access).
-- **Buses:** a minimal native memory interface, plus an **AXI4-Lite** wrapper
-  for drop-in integration into standard SoC fabrics.
-- **RTOS:** a ready-to-run **FreeRTOS** port (preemptive multitasking driven
-  by the SoC timer, with a UART console).
-- **Verification:** self-checking tests, cycle-accurate **co-simulation
-  against a golden RV32IM ISA model**, an **RVFI** (RISC-V Formal Interface)
-  port, a Debug-Module self-check, and a constrained-random test flow.
-- **Performance:** ~**3.16 CoreMark/MHz** (measured on RTL, no caches).
+- **ISA:** RV32IMAC + B (`Zba`/`bb`/`bc`/`bs`), `Zcb`, `Zicsr`
+- **Pipeline:** 3-stage in-order with full forwarding & zero load-use stalls
+- **Branch Prediction:** Dynamic gshare + BTB + RAS
+- **Privilege & Security:** M/U/N modes, 8-region PMP/ePMP, and triggers (`SECURE`)
+- **Memory & Buses:** Hardware misaligned access, native bus, and AXI4-Lite master
+- **Debug:** RISC-V external debug via JTAG (DTM + DM)
+- **Software & RTOS:** Preemptive FreeRTOS port with UART console
+- **Verification:** Golden ISA co-simulation, RVFI formal port, and self-checking tests
+
 
 ---
 
@@ -70,10 +45,9 @@ takshaka/
 ├── programs/           test-program builders
 ├── sw/                 assembly test programs & bring-up firmware
 ├── rtos/               FreeRTOS port (kernel, BSP, demo app)
-├── fpga/               FPGA SoC + Arty A7 / ZCU102 constraints
+├── fpga/               FPGA SoC + Arty A7
 ├── docs/               documentation site (MkDocs)
-├── build.sh            Linux/macOS build & test driver
-└── build.ps1           Windows (PowerShell) build & test driver
+└── build.sh            build & test driver
 ```
 
 ## Requirements
@@ -81,11 +55,9 @@ takshaka/
 - **Icarus Verilog 12+** (`iverilog` / `vvp`) for simulation
 - **Python 3.10+** for the test-program builders and co-simulation
 - *(optional)* a RISC-V GCC toolchain to rebuild the assembly test programs
-- *(optional)* Vivado for the Arty A7 / ZCU102 FPGA flows
+- *(optional)* Vivado for the Arty A7 FPGA flows
 
 ## Build & test
-
-Linux / macOS:
 
 ```bash
 ./build.sh          # compile + self-checking smoke test
@@ -98,21 +70,60 @@ Linux / macOS:
 ./build.sh clean
 ```
 
-Windows (PowerShell):
+## Performance & Benchmarks
 
-```powershell
-.\build.ps1          # compile + smoke
-.\build.ps1 cosim    # + golden co-simulation
-.\build.ps1 rvfi
-.\build.ps1 debug
+Takshaka has been evaluated across industry-standard embedded benchmarks in simulation and bare-metal execution on physical FPGA silicon.
+
+### CoreMark
+
+| Metric | Simulation / FPGA |
+| :--- | :--- |
+| Cycles / iteration | 341,599 |
+| Iterations / Sec (at 100 MHz) | 292 |
+| CoreMark / MHz | **2.92** |
+
+### Dhrystone v2.1
+
+| Metric | Simulation / FPGA |
+| :--- | :--- |
+| Cycles / iteration | 330 |
+| Dhrystones / sec (at 100 MHz) | 302,973 |
+| DMIPS (at 100 MHz) | 172.43 |
+| DMIPS / MHz | **1.72** |
+
+---
+
+## Running Benchmarks
+
+> If you are on a fresh clone, you must build the Verilator simulator first by running `./build.sh` from the repository root.
+
+### CoreMark
+
+To compile and run CoreMark in Verilator simulation:
+
+```bash
+cd coremark && ./run_coremark.sh
 ```
 
-Expected output for the default build:
+To run on physical hardware (Arty A7-100T FPGA @ 25 MHz):
+```bash
+cd coremark && ./run_coremark_arty_a7.sh
+```
 
+### Dhrystone 2.1
+
+To compile and run the industry-standard 2,000,000-iteration Dhrystone benchmark in simulation:
+
+```bash
+cd dhrystone && ./run_dhrystone.sh
 ```
-[TB] PASS
-[cosim] MATCH — retires identical. RTL is ISA-correct.
+
+To synthesize, program, and monitor on the Arty A7-100T board (@ 25 MHz):
+```bash
+cd dhrystone && ./run_dhrystone_arty_a7.sh
 ```
+
+---
 
 ## Configurations
 

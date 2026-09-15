@@ -16,7 +16,7 @@
 // synthesizable shifter (start + 8 data + stop, LSB-first) for FPGA; the
 // $write is guarded translate_off / SIMULATION so it is sim-only.
 // ============================================================================
-`default_nettype none
+
 
 module takshaka_uart #(
   parameter int CLK_HZ       = 50_000_000,

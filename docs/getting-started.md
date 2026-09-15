@@ -12,17 +12,9 @@
 
 ## Build and run the smoke test
 
-=== "Linux / macOS"
-
-    ```bash
-    ./build.sh
-    ```
-
-=== "Windows (PowerShell)"
-
-    ```powershell
-    .\build.ps1
-    ```
+```bash
+./build.sh
+```
 
 Expected output:
 

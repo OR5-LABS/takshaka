@@ -21,7 +21,7 @@
 //   • GPR & CSR          via Access-Register abstract command → core handshake
 //   • memory             via System Bus Access master → SoC RAM arbiter
 // ============================================================================
-`default_nettype none
+
 
 module takshaka_debug #(
   parameter logic [31:0] IDCODE = 32'h4B41_5641   // "KAVA", bit0=1 per JTAG

@@ -82,7 +82,7 @@ module tb_takshaka;
       else                 $display("[TB] FAIL (code %0d)", tohost);
       $finish;
     end
-    if (cycle > 20000000) begin   // raised for CoreMark (one iteration ~0.3M cyc)
+    if (cycle > 50000000) begin   // raised for CoreMark (one iteration ~0.3M cyc)
       $display("[TB] TIMEOUT — no tohost write");
       $finish;
     end

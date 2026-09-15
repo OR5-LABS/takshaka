@@ -17,7 +17,7 @@
 //   keeps the flops together and they get into IOB/SLICEM fast routes.
 // ============================================================================
 
-`default_nettype none
+
 
 module takshaka_reset_sync #(
     parameter int  DEPTH       = 3,

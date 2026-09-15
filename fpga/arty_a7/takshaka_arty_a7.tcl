@@ -13,7 +13,12 @@ cd $build_dir
 set fp [open $fpga_dir/takshaka_arty_a7.f r]
 while {[gets $fp line] >= 0} {
   set line [string trim $line]
-  if {$line eq "" || [string match "#*" $line]} { continue }
+  if {$line eq "" || [string match "#*" $line] || [string match "//*" $line]} { continue }
+  if {[string match "+incdir+*" $line]} {
+    set incdir [string range $line 8 end]
+    set_property include_dirs [list [file normalize "$fpga_dir/$incdir"]] [current_fileset]
+    continue
+  }
   read_verilog -sv [file normalize $fpga_dir/$line]
 }
 close $fp
@@ -31,5 +36,6 @@ place_design
 route_design
 report_utilization    -file $build_dir/util.rpt
 report_timing_summary -file $build_dir/timing.rpt
+write_checkpoint -force $build_dir/route.dcp
 write_bitstream -force $build_dir/takshaka_arty_a7.bit
 puts "DONE: $build_dir/takshaka_arty_a7.bit"

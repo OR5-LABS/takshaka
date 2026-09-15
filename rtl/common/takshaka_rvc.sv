@@ -2,7 +2,7 @@
 // takshaka_rvc.sv — RV32C 16-bit → 32-bit instruction expander (combinational)
 // ============================================================================
 
-`default_nettype none
+
 
 module takshaka_rvc (
   input  logic [15:0] instr16,

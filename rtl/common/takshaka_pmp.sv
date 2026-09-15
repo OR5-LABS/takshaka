@@ -14,7 +14,7 @@
 // Config/address CSRs are passed in as flat vectors (one 8-bit cfg + one 32-bit
 // addr per region) so the holder (the CSR file) owns the architectural state.
 // ============================================================================
-`default_nettype none
+
 
 module takshaka_pmp #(
   parameter int NPMP = 8

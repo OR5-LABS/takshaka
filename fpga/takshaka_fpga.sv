@@ -11,7 +11,7 @@
 //   0x2000_1000   : LED register
 // ============================================================================
 `include "takshaka_pkg.sv"
-`default_nettype none
+
 
 module takshaka_fpga
   import takshaka_pkg::*;

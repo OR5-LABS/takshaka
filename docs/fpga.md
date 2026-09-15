@@ -10,8 +10,7 @@ fpga/
 ├── takshaka_fpga.sv        FPGA SoC top (core + UART + GPIO/LED)
 ├── takshaka_reset_sync.sv  reset synchroniser
 ├── tb_takshaka_fpga.sv     simulation testbench (UART banner + LED blink)
-├── arty_a7/                Digilent Arty A7 (Artix-7) project + XDC
-└── zcu102/                 Xilinx ZCU102 (UltraScale+) project + XDC
+└── arty_a7/                Digilent Arty A7 (Artix-7) project + XDC
 ```
 
 ## Simulating the FPGA SoC

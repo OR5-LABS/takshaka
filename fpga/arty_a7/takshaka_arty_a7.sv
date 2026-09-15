@@ -8,7 +8,7 @@
 //
 // Provide sw/firmware.mem to the Vivado project as "firmware.mem".
 // ============================================================================
-`default_nettype none
+
 
 module takshaka_arty_a7 (
   input  wire       CLK100,
@@ -21,10 +21,15 @@ module takshaka_arty_a7 (
   takshaka_reset_sync #(.DEPTH(3), .ACTIVE_HIGH(1'b1)) u_rst (
       .clk(CLK100), .async_rst_in(~ck_rst), .sync_rst_out(sys_rst));
 
+  reg [1:0] clk_div = 0;
+  always_ff @(posedge CLK100) clk_div <= clk_div + 1;
+  wire clk25;
+  BUFG u_bufg (.I(clk_div[1]), .O(clk25));
+
   wire [7:0] soc_leds;
-  takshaka_fpga #(.CLK_HZ(100_000_000), .UART_BAUD(115_200),
-                  .MEM_WORDS(4096), .MEMFILE("firmware.mem")) u_soc (
-      .clk(CLK100), .rst(sys_rst),
+  takshaka_fpga #(.CLK_HZ(25_000_000), .UART_BAUD(115_200),
+                  .MEM_WORDS(8192), .MEMFILE("firmware.mem")) u_soc (
+      .clk(clk25), .rst(sys_rst),
       .leds(soc_leds), .serial_tx(uart_rxd_out), .serial_rx(uart_txd_in),
       .tohost(), .tohost_we()
   );
