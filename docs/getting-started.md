@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- **Icarus Verilog 12+** (`iverilog` / `vvp`) — the simulator.
+- **Verilator 5+** — the simulator.
 - **Python 3.10+** — the test-program builders and the golden co-simulation
   driver.
 - *(optional)* a **RISC-V GCC** toolchain (`riscv-none-elf-gcc`) to rebuild the

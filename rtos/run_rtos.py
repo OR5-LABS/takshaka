@@ -33,8 +33,7 @@ SIM  = os.path.join(CORE, "sim", "tb_takshaka_rtos")
 POS  = os.path.join(HERE, "build", "rtos.hex")
 NEG  = os.path.join(HERE, "build", "rtos_neg.hex")
 
-IVERILOG = os.environ.get("IVERILOG", "iverilog")
-VVP      = os.environ.get("VVP", "vvp")
+VERILATOR = os.environ.get("VERILATOR", "verilator")
 NUM_ITEMS = 8
 
 def sh(cmd, **kw):
@@ -48,17 +47,15 @@ def compile_tb():
         DBG, "rtl/takshaka_core.sv", "rtl/takshaka_uart.sv", "rtl/takshaka_soc.sv",
         "tb/tb_takshaka_rtos.sv",
     ]
-    cmd = [IVERILOG, "-g2012", "-I", G, "-I", "rtl", "-o", SIM] + src
+    cmd = [VERILATOR, "--binary", "-j", "0", "-Wno-fatal", "-Wno-WIDTHEXPAND", "-Wno-WIDTHTRUNC", "--trace", "--timescale", "1ns/1ps", "--Mdir", "sim", "-o", "tb_takshaka_rtos", "-I" + G, "-Irtl"] + src
     r = sh(cmd)
-    # Icarus emits harmless "sorry: constant selects" notes on stderr; only a
-    # non-zero return code is a real failure.
     if r.returncode != 0:
         print(r.stdout); print(r.stderr)
         sys.exit("COMPILE FAILED")
     print("[harness] testbench compiled")
 
 def run(hexfile, maxcyc):
-    r = sh([VVP, SIM, f"+IMEM={hexfile}", f"+MAXCYC={maxcyc}"])
+    r = sh([SIM, f"+IMEM={hexfile}", f"+MAXCYC={maxcyc}"])
     return r.stdout + r.stderr
 
 def check_positive(t):

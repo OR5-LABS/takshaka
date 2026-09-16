@@ -1,8 +1,8 @@
 // ============================================================================
 // tb_takshaka_rvfi.sv — self-checking RVFI (RISC-V Formal Interface) testbench.
 //
-//   iverilog -g2012 -DRISCV_FORMAL ... tb/tb_takshaka_rvfi.sv
-//   vvp sim/tb_takshaka_rvfi +IMEM=programs/build/smoke.hex
+//   verilator --binary ... tb/tb_takshaka_rvfi.sv
+//   sim/tb_takshaka_rvfi +IMEM=programs/build/smoke.hex
 //
 // Drives the smoke program and checks the core riscv-formal invariants on
 // takshaka_core's RVFI port (proves the formal interface is wired correctly):

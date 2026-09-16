@@ -52,7 +52,7 @@ takshaka/
 
 ## Requirements
 
-- **Icarus Verilog 12+** (`iverilog` / `vvp`) for simulation
+- **Verilator 5+** for simulation
 - **Python 3.10+** for the test-program builders and co-simulation
 - *(optional)* a RISC-V GCC toolchain to rebuild the assembly test programs
 - *(optional)* Vivado for the Arty A7 FPGA flows
