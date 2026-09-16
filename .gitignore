@@ -21,3 +21,10 @@ site/
 # FreeRTOS-Kernel is a fetched dependency (rtos/build_rtos.sh clones it on demand)
 rtos/FreeRTOS-Kernel/
 rtos/build/
+
+# RISCV toolchain generated object files
+*.elf
+*.bin
+*.mem
+*.hex
+*.o
