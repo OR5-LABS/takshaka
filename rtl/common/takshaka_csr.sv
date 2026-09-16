@@ -113,7 +113,7 @@ module takshaka_csr
 
   // misa is supplied by the MISA_VAL parameter (per-core true ISA advertisement).
 
-  // hoisted const part-selects (must be continuous assigns under iverilog 12)
+  // hoisted const part-selects
   wire [31:0] mcycle_lo   = mcycle[31:0];
   wire [31:0] mcycle_hi   = mcycle[63:32];
   wire [31:0] minstret_lo = minstret[31:0];

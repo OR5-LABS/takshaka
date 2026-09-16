@@ -52,7 +52,7 @@ takshaka/
 
 ## Requirements
 
-- **Icarus Verilog 12+** (`iverilog` / `vvp`) for simulation
+- **Verilator 5+** for simulation
 - **Python 3.10+** for the test-program builders and co-simulation
 - *(optional)* a RISC-V GCC toolchain to rebuild the assembly test programs
 - *(optional)* Vivado for the Arty A7 FPGA flows
@@ -76,7 +76,7 @@ Takshaka has been evaluated across industry-standard embedded benchmarks in simu
 
 ### CoreMark
 
-| Metric | Simulation / FPGA |
+| Metric | FPGA |
 | :--- | :--- |
 | Cycles / iteration | 341,599 |
 | Iterations / Sec (at 100 MHz) | 292 |
@@ -84,7 +84,7 @@ Takshaka has been evaluated across industry-standard embedded benchmarks in simu
 
 ### Dhrystone v2.1
 
-| Metric | Simulation / FPGA |
+| Metric |  FPGA |
 | :--- | :--- |
 | Cycles / iteration | 330 |
 | Dhrystones / sec (at 100 MHz) | 302,973 |
@@ -138,17 +138,6 @@ define:
 Enable the secure configuration with the `SECURE` RTL parameter, or at compile
 time with `-DTAKSHAKA_SECURE`.
 
-## Documentation
-
-Full documentation — architecture, ISA, memory map, CSRs, branch prediction,
-security model, debug, bus integration, FPGA bring-up, and verification —
-lives in [`docs/`](docs) and builds into a browsable site with
-[MkDocs](https://www.mkdocs.org/):
-
-```bash
-pip install -r docs/requirements.txt
-mkdocs serve      # http://127.0.0.1:8000
-```
 
 ## License
 

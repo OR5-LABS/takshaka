@@ -46,7 +46,7 @@ module takshaka_muldiv
       default         : prod = ze_a * ze_b;   // MULHU / MUL (unsigned)
     endcase
   end
-  // hoisted const part-selects (iverilog 12 needs these in continuous assigns)
+  // hoisted const part-selects
   wire [31:0] prod_lo = prod[31:0];
   wire [31:0] prod_hi = prod[63:32];
 
