@@ -125,15 +125,27 @@ cd dhrystone && ./run_dhrystone_arty_a7.sh
 
 ---
 
+## FPGA Resource Utilization
+
+Synthesis and implementation were performed using **AMD Vivado 2023.2** targeting the **Xilinx Artix-7 100T** FPGA (`xc7a100tcsg324-1`) on the Digilent Arty A7 evaluation board.
+
+### Implementation Metrics (Post-Route)
+
+| Component / Target | Slice LUTs | Logic LUTs | LUTRAM | Registers (FF) | DSP48E1 | Block RAM (RAMB36) | Timing Slack (WNS) |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **Takshaka Reference SoC** | **15,895** (25.1%) | 7,559 | 8,336 | **2,150** (1.7%) | **12** (5.0%) | **0** (0.0%) | **+1.994 ns** @ 25 MHz |
+
+---
+
 ## Configurations
 
 Takshaka ships in two build-time configurations, selected by a parameter /
 define:
 
-| Configuration | Privilege | Memory protection | Debug triggers | Use case |
-|---------------|-----------|-------------------|----------------|----------|
-| **Default**   | Machine only | — | — | smallest footprint |
-| **`SECURE`**  | Machine + User + N | 8-region PMP + ePMP | breakpoint / watchpoint | isolation & introspection |
+| Configuration | LUTs | FFs | DSPs | BRAMs |
+|---------------|------|-----|------|-------|
+| Default (Machine mode only) | 6,028 | 2,090 | 12 | 0 |
+| SECURE (M+U, PMP/ePMP, ECC) | 8,647 | 2,993 | 12 | 0 |
 
 Enable the secure configuration with the `SECURE` RTL parameter, or at compile
 time with `-DTAKSHAKA_SECURE`.

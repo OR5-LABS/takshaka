@@ -2,9 +2,10 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-TC="${RISCV_TC:-/home/yash/toolchains/xpack-riscv-none-elf-gcc-13.2.0-2/bin}"
-GCC="${GCC:-$TC/riscv-none-elf-gcc}"
-OBJCOPY="${OBJCOPY:-$TC/riscv-none-elf-objcopy}"
+TC="${RISCV_TC:-}"
+PFX="${TC:+$TC/}"
+GCC="${GCC:-${PFX}riscv-none-elf-gcc}"
+OBJCOPY="${OBJCOPY:-${PFX}riscv-none-elf-objcopy}"
 
 if ! command -v "$GCC" &>/dev/null && ! command -v riscv-none-elf-gcc &>/dev/null && ! command -v riscv32-unknown-elf-gcc &>/dev/null; then
   echo "ERROR: RISC-V GCC toolchain not found!" >&2
