@@ -109,7 +109,7 @@ sim/tb_takshaka +IMEM=programs/build/smoke.hex
 
 if [[ "$ACTION" == "cosim" ]]; then
   echo "Co-simulating against golden model..."
-  VERILATOR="$VRL" python tools/cosim.py \
+  VVP="" VERILATOR="$VRL" python tools/cosim.py \
       --hex programs/build/smoke.hex --sim sim/tb_takshaka
 fi
 

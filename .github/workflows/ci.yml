@@ -9,13 +9,13 @@ on:
 
 jobs:
   build-and-test:
-    name: Build & self-checking tests (Icarus Verilog)
+    name: Build & self-checking tests (Verilator)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Icarus Verilog
-        run: sudo apt-get update && sudo apt-get install -y iverilog
+      - name: Install Verilator
+        run: sudo apt-get update && sudo apt-get install -y verilator
 
       - uses: actions/setup-python@v5
         with:

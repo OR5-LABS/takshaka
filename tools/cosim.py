@@ -24,15 +24,17 @@ def main():
     repo = os.path.dirname(here)
     ap = argparse.ArgumentParser()
     ap.add_argument("--hex", required=True)
-    ap.add_argument("--sim", required=True, help="compiled vvp image")
+    ap.add_argument("--sim", required=True, help="compiled simulator (Verilator binary; or a vvp image when --vvp is set)")
     ap.add_argument("--vvp", default=os.environ.get("VVP", "vvp"))
     ap.add_argument("--golden", default=os.path.join(here, "golden_rv32im.py"))
     ap.add_argument("--max", type=int, default=100000)
     a = ap.parse_args()
 
+    cmd = [a.sim, f"+IMEM={a.hex}", "+TRACE=1"]
+    if a.vvp:
+        cmd.insert(0, a.vvp)
     rtl_raw = subprocess.run(
-        [a.vvp, a.sim, f"+IMEM={a.hex}", "+TRACE=1"],
-        capture_output=True, text=True).stdout
+        cmd, capture_output=True, text=True).stdout
     gold_raw = subprocess.run(
         [sys.executable, a.golden, a.hex, str(a.max)],
         capture_output=True, text=True).stdout

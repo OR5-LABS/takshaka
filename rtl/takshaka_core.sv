@@ -854,8 +854,8 @@ module takshaka_core
     always_ff @(posedge clk) begin
       if (rst) begin
         ghist <= '0;
-        for (bi = 0; bi < BHT_ENTRIES; bi = bi + 1) bht[bi] <= 2'b01;      // weakly N-T
-        for (bi = 0; bi < BTB_ENTRIES; bi = bi + 1) btb_valid[bi] <= 1'b0;
+        for (bi = 0; bi < BHT_ENTRIES; bi = bi + 1) bht[bi] = 2'b01;       // weakly N-T (blocking: Verilator 5.020 BLKLOOPINIT)
+        for (bi = 0; bi < BTB_ENTRIES; bi = bi + 1) btb_valid[bi] = 1'b0;
       end else if (bp_upd_en) begin
         if (d_is_branch) begin   // conditional: train the 2-bit counter + history
           if (bp_upd_taken) bht[bht_wr_idx] <= (bht[bht_wr_idx]==2'b11) ? 2'b11 : bht[bht_wr_idx]+2'b01;
