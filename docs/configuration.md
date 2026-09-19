@@ -6,10 +6,10 @@ capability.
 
 ## Configurations
 
-| Configuration | Privilege | PMP / ePMP | Debug triggers | Use case |
+| Configuration | Privilege | PMP / Smepmp | Debug triggers | Use case |
 |---------------|-----------|------------|----------------|----------|
 | **Default** | Machine only | — | — | smallest footprint |
-| **`SECURE`** | Machine + User + N | 8-region PMP + ePMP | breakpoint / watchpoint | isolation & introspection |
+| **`SECURE`** | Machine + User (+ user-trap delegation) | 8-region PMP + Smepmp | breakpoint / watchpoint | isolation & introspection |
 
 Enable the secure configuration with the `SECURE` RTL parameter, or at compile
 time with `-DTAKSHAKA_SECURE`.
@@ -28,8 +28,8 @@ time with `-DTAKSHAKA_SECURE`.
 
 | Feature | How | Notes |
 |---------|-----|-------|
-| User + N privilege | `SECURE` | full M/U/N split with trap delegation |
-| PMP + ePMP | `SECURE` | 8 regions, TOR/NA4/NAPOT, `mseccfg` |
+| User mode + user-trap delegation | `SECURE` | M/U privilege; delegation follows the withdrawn `N` draft (never ratified) |
+| PMP + Smepmp | `SECURE` | 8 regions, TOR/NA4/NAPOT, `mseccfg` |
 | Debug triggers | `SECURE` | `mcontrol6` execute + load/store match |
 | AXI4-Lite bus | instantiate `takshaka_axi_lite` | optional; default SoC uses the native interface |
 | FreeRTOS | `rtos/` | preemptive RTOS port + demo |
@@ -42,7 +42,7 @@ time with `-DTAKSHAKA_SECURE`.
 | `cosim` | + golden-model co-simulation |
 | `rvfi` | RVFI self-check |
 | `debug` | JTAG / Debug-Module self-check |
-| `priv` | `SECURE`: M/U/N + PMP + trigger tests |
+| `priv` | `SECURE`: M/U privilege, user-trap delegation, PMP + trigger tests |
 | `axi` | AXI4-Lite master BFM test |
 | `rtos` | FreeRTOS preemptive multitasking demo |
 | `clean` | remove build artifacts |

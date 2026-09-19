@@ -18,7 +18,7 @@ cores.
 - A **3-stage in-order pipeline** with full forwarding and no load-use stall.
 - A **dynamic branch predictor** — gshare direction predictor + BTB + return
   address stack.
-- Optional **M/U/N privilege**, an **8-region PMP** (with ePMP), and hardware
+- Optional **M/U privilege** with user-trap delegation, an **8-region PMP** (with Smepmp), and hardware
   **debug triggers** in the `SECURE` configuration.
 - Hardware **misaligned** load/store support.
 - **RISC-V External Debug** (JTAG DTM + Debug Module).

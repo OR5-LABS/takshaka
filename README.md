@@ -2,8 +2,8 @@
 
 **Takshaka** is a compact, high-performance **3-stage pipelined RV32IMAC**
 processor core. It executes instructions in a classic in-order
-fetch / execute / memory-writeback pipeline with full result forwarding, a
-load-use interlock, and a dynamic branch predictor — delivering strong
+fetch / execute / memory-writeback pipeline with full result forwarding (no
+load-use stall), and a dynamic branch predictor — delivering strong
 per-clock throughput while staying small and easy to reason about.
 
 The core targets embedded and control-plane roles that want more performance
@@ -15,14 +15,14 @@ cores.
 
 ## Highlights
 
-- **ISA:** RV32IMAC + B (`Zba`/`bb`/`bc`/`bs`), `Zcb`, `Zicsr`
-- **Pipeline:** 3-stage in-order with full forwarding & zero load-use stalls
-- **Branch Prediction:** Dynamic gshare + BTB + RAS
-- **Privilege & Security:** M/U/N modes, 8-region PMP/ePMP, and triggers (`SECURE`)
+- **ISA:** `RV32IMACB_Zicsr_Zcb_Zbc`: RV32IMAC, the ratified `B` extension (`Zba`, `Zbb`, `Zbs`), `Zbc` carry-less multiply, `Zcb`, `Zicsr`
+- **Pipeline:** 3-stage in-order with full W→X forwarding and no load-use stall (only multiply/divide and misaligned accesses stall)
+- **Branch Prediction:** 256-entry gshare, 64-entry BTB, and RAS
+- **Privilege & Security** (`SECURE` build): Machine and User modes, user-level trap delegation (from the withdrawn `N` extension draft, never ratified; `misa.N` is not set), 8-region PMP with Smepmp, and `Sdtrig` triggers (`mcontrol6` format)
 - **Memory & Buses:** Hardware misaligned access, native bus, and AXI4-Lite master
-- **Debug:** RISC-V external debug via JTAG (DTM + DM)
+- **Debug:** RISC-V external debug via JTAG (Debug Module and JTAG DTM report debug spec 0.13 (`dmstatus.version` = 2))
 - **Software & RTOS:** Preemptive FreeRTOS port with UART console
-- **Verification:** Golden ISA co-simulation, RVFI formal port, and self-checking tests
+- **Verification:** co-simulation of the smoke program against a golden RV32IM ISA model, an RVFI (riscv-formal interface) trace self-check, and self-checking tests
 
 
 ---
@@ -64,7 +64,7 @@ takshaka/
 ./build.sh cosim    # + co-simulate against the golden ISA model
 ./build.sh rvfi     # RVFI (formal interface) self-check
 ./build.sh debug    # JTAG / Debug-Module self-check
-./build.sh priv     # SECURE config: M/U/N + PMP + trigger tests
+./build.sh priv     # SECURE config: M/U privilege, user-trap delegation, PMP + trigger tests
 ./build.sh axi      # AXI4-Lite master BFM test
 ./build.sh rtos     # FreeRTOS preemptive multitasking demo
 ./build.sh clean
@@ -76,19 +76,21 @@ Takshaka has been evaluated across industry-standard embedded benchmarks in simu
 
 ### CoreMark
 
-| Metric | FPGA |
+> Cycle counts are measured; per-second figures are computed for a 100 MHz clock. The Arty A7 board scripts run at 25 MHz.
+
+| Metric | Result |
 | :--- | :--- |
 | Cycles / iteration | 341,599 |
-| Iterations / Sec (at 100 MHz) | 292 |
+| Iterations / Sec (computed for 100 MHz) | 292 |
 | CoreMark / MHz | **2.92** |
 
 ### Dhrystone v2.1
 
-| Metric |  FPGA |
+| Metric | Result |
 | :--- | :--- |
 | Cycles / iteration | 330 |
-| Dhrystones / sec (at 100 MHz) | 302,973 |
-| DMIPS (at 100 MHz) | 172.43 |
+| Dhrystones / sec (computed for 100 MHz) | 302,973 |
+| DMIPS (computed for 100 MHz) | 172.43 |
 | DMIPS / MHz | **1.72** |
 
 ---
@@ -133,7 +135,7 @@ define:
 | Configuration | Privilege | Memory protection | Debug triggers | Use case |
 |---------------|-----------|-------------------|----------------|----------|
 | **Default**   | Machine only | — | — | smallest footprint |
-| **`SECURE`**  | Machine + User + N | 8-region PMP + ePMP | breakpoint / watchpoint | isolation & introspection |
+| **`SECURE`**  | Machine + User (+ user-trap delegation) | 8-region PMP + Smepmp | breakpoint / watchpoint | isolation & introspection |
 
 Enable the secure configuration with the `SECURE` RTL parameter, or at compile
 time with `-DTAKSHAKA_SECURE`.
