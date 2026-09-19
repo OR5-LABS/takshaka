@@ -20,6 +20,19 @@ Tests (each with a load-bearing NEGATIVE CONTROL):
            (mcause=2). NEG CONTROL: U-mode read of cycle (a U-readable CSR is
            not exercised here; instead the neg control is that in M-mode the
            same csrr succeeds), plus U-mode read of a non-priv op runs fine.
+  uload  : U load from a PMP region without R -> load access-fault (mcause=5,
+           mtval=addr, mepc=the load, rd unchanged). NEG CONTROL: with R set
+           the load returns the data.
+  mml_*  : Smepmp machine mode lockdown (mseccfg.MML). mml_mexec: M-mode
+           execution from a U-only rule faults (mcause=1); mml_uload: a U load
+           from an M-only (L=1) rule faults (mcause=5). NEG CONTROLS
+           (mml_*_off): the same programs without MML follow the legacy rules
+           and run. mml_cfg: pmpcfg/RLB write rules under MML, with controls.
+  mtvec_mode : only direct mode is implemented, so mtvec.MODE reads as 0: a
+           write of HANDLER|1 reads back as HANDLER and an ecall enters HANDLER.
+  uamo   : U-mode AMOSWAP.W to a read-only PMP region -> store/AMO access-fault
+           (mcause=7, mtval=addr, rd and memory unchanged). NEG CONTROL: with
+           R/W the swap returns the old word and writes the new one.
 """
 from pathlib import Path
 
@@ -53,6 +66,7 @@ def csrrw(rd,csr,rs1): return I(csr,rs1,1,rd,0x73)
 def csrrs(rd,csr,rs1): return I(csr,rs1,2,rd,0x73)
 def csrrc(rd,csr,rs1): return I(csr,rs1,3,rd,0x73)
 def csrrwi(rd,csr,imm):return I(csr,imm,5,rd,0x73)
+def andi(rd,rs1,i): return I(i,rs1,7,rd,0x13)
 def ecall():  return I(0,0,0,0,0x73)
 def mret():   return I(0x302,0,0,0,0x73)
 def nop():    return addi(0,0,0)
@@ -326,6 +340,283 @@ def build_ucsr(from_user):
     u = emit(u, *li(1,TOHOST), addi(2,0,9), sw(2,1,0), jal(0,0))  # code 9 (no trap)
     return prog
 
+# --------------------------------------------------------------------------
+# Test 5: uload — U load from a PMP region with no read permission -> load
+#         access-fault (mcause=5, mtval=addr, mepc=the load). The trap must be
+#         taken (the load is not skipped) and rd must keep its old value.
+#         Neg control: with R set, the same load succeeds and returns the data.
+# --------------------------------------------------------------------------
+PMPCFG1 = 0x3A1
+PMPADDR2, PMPADDR3 = 0x3B2, 0x3B3
+MSECCFG = 0x747
+
+def tohost_code(emit, at, code):
+    return emit(at, *li(1,TOHOST), addi(2,0,code), sw(2,1,0), jal(0,0))
+
+def build_uload(noread):
+    prog = {}
+    def emit(addr, *ins):
+        for x in ins:
+            prog[addr] = x; addr += 4
+        return addr
+    HANDLER = 0x400
+    UCODE   = 0x800
+    cfg0 = PMP_NAPOT | (0 if noread else PMP_R)      # DRAM window under test
+    cfg1 = PMP_NAPOT | PMP_R | PMP_W | PMP_X         # catch-all
+    pc = 0
+    pc = emit(pc, *li(5, HANDLER), csrrw(0, MTVEC, 5))
+    # seed the DRAM word so the neg control can check the loaded value
+    pc = emit(pc, *li(6, DRAM), *li(7, 0x600DF00D), sw(7,6,0))
+    pc = emit(pc, *li(5, napot_addr(DRAM, 64)), csrrw(0, PMPADDR0, 5))
+    pc = emit(pc, *li(5, NAPOT_ALL), csrrw(0, PMPADDR1, 5))
+    pc = emit(pc, *li(5, (cfg1<<8)|cfg0), csrrw(0, PMPCFG0, 5))
+    pc = emit(pc, *li(8, 0x1234))                    # rd of the load: old value
+    pc = emit(pc, *li(5, 0x1800), csrrc(0, MSTATUS, 5))        # MPP=U
+    pc = emit(pc, *li(5, UCODE), csrrw(0, MEPC, 5), mret())
+    pc = emit(pc, jal(0,0))
+
+    u = UCODE
+    u = emit(u, *li(6, DRAM))
+    load_pc = u
+    u = emit(u, lw(8,6,0))
+    if noread:
+        u = tohost_code(emit, u, 6)                  # code 6: load did not trap
+    else:
+        u = emit(u, *li(9, 0x600DF00D), bne(8,9, 0)); b = u-4
+        u = tohost_code(emit, u, 1)                  # PASS
+        f = u; u = tohost_code(emit, u, 7)           # code 7: wrong data
+        prog[b] = bne(8,9, f-b)
+
+    h = HANDLER
+    if noread:
+        h = emit(h, csrrs(20, MCAUSE, 0), addi(22,0,5), bne(20,22, 0)); bc = h-4
+        h = emit(h, csrrs(21, MTVAL, 0), *li(23, DRAM), bne(21,23, 0)); bt = h-4
+        h = emit(h, csrrs(24, MEPC, 0), *li(25, load_pc), bne(24,25, 0)); be = h-4
+        h = emit(h, *li(26, 0x1234), bne(8,26, 0)); br = h-4
+        h = tohost_code(emit, h, 1)                  # PASS
+        fc = h; h = tohost_code(emit, h, 3)          # wrong mcause
+        ft = h; h = tohost_code(emit, h, 4)          # wrong mtval
+        fe = h; h = tohost_code(emit, h, 8)          # wrong mepc
+        fr = h; h = tohost_code(emit, h, 9)          # rd was written
+        prog[bc] = bne(20,22, fc-bc); prog[bt] = bne(21,23, ft-bt)
+        prog[be] = bne(24,25, fe-be); prog[br] = bne(8,26, fr-br)
+    else:
+        h = tohost_code(emit, h, 5)                  # code 5: unexpected trap
+    return prog
+
+# --------------------------------------------------------------------------
+# Smepmp machine mode lockdown (mseccfg.MML, Smepmp 1.0).
+#
+# Shared PMP layout (rules valid both before and after MML is set):
+#   region 0  DRAM[0..63]     L=1 R W   (MML: M-only RW;  legacy: M+U RW)
+#   region 1  UCODE[0..63]    L=0 R X   (MML: U-only RX;  legacy: U RX, M any)
+#   region 2  0x0..0xFFF      L=1 R X   (MML: M-only RX;  legacy: M+U RX)
+#   region 3  everything      L=0 W X   (MML: shared RW (Smepmp LRWX=0011);
+#                                        legacy: U W X, M any)
+# --------------------------------------------------------------------------
+MML_CFG = ((PMP_NAPOT|PMP_W|PMP_X) << 24) | ((PMP_L|PMP_NAPOT|PMP_R|PMP_X) << 16) | \
+          ((PMP_NAPOT|PMP_R|PMP_X) << 8) | (PMP_L|PMP_NAPOT|PMP_R|PMP_W)
+
+def mml_setup(emit, pc, handler, ucode, set_mml):
+    pc = emit(pc, *li(5, handler), csrrw(0, MTVEC, 5))
+    pc = emit(pc, *li(5, napot_addr(DRAM, 64)),    csrrw(0, PMPADDR0, 5))
+    pc = emit(pc, *li(5, napot_addr(ucode, 64)),   csrrw(0, PMPADDR1, 5))
+    pc = emit(pc, *li(5, napot_addr(0, 0x1000)),   csrrw(0, PMPADDR2, 5))
+    pc = emit(pc, *li(5, NAPOT_ALL),               csrrw(0, PMPADDR3, 5))
+    pc = emit(pc, *li(5, MML_CFG),                 csrrw(0, PMPCFG0, 5))
+    if set_mml:
+        pc = emit(pc, csrrwi(0, MSECCFG, 1))         # mseccfg.MML = 1
+    return pc
+
+# mml_mexec: with MML=1, M-mode may not execute from a U-only (L=0) rule ->
+#   instruction access-fault (mcause=1, mtval=target). Neg control (MML=0):
+#   the same jump executes the code there (legacy: M ignores L=0 rules).
+def build_mml_mexec(set_mml):
+    prog = {}
+    def emit(addr, *ins):
+        for x in ins:
+            prog[addr] = x; addr += 4
+        return addr
+    HANDLER, UCODE = 0x400, 0x800
+    pc = mml_setup(emit, 0, HANDLER, UCODE, set_mml)
+    pc = emit(pc, jal(0, UCODE - pc))               # M jumps into the U-only window
+
+    u = UCODE
+    u = tohost_code(emit, u, 6 if set_mml else 1)   # MML: code 6 (M executed) / off: PASS
+
+    h = HANDLER
+    if set_mml:
+        h = emit(h, csrrs(20, MCAUSE, 0), addi(22,0,1), bne(20,22, 0)); bc = h-4
+        h = emit(h, csrrs(21, MTVAL, 0), *li(23, UCODE), bne(21,23, 0)); bt = h-4
+        h = tohost_code(emit, h, 1)                  # PASS
+        fc = h; h = tohost_code(emit, h, 3)
+        ft = h; h = tohost_code(emit, h, 4)
+        prog[bc] = bne(20,22, fc-bc); prog[bt] = bne(21,23, ft-bt)
+    else:
+        h = tohost_code(emit, h, 5)                  # unexpected trap
+    return prog
+
+# mml_uload: with MML=1, an L=1 rule is M-only, so a U load from it faults
+#   (mcause=5, mtval=addr, rd unchanged). Neg control (MML=0): the legacy L=1
+#   R/W rule also grants U, so the load succeeds.
+def build_mml_uload(set_mml):
+    prog = {}
+    def emit(addr, *ins):
+        for x in ins:
+            prog[addr] = x; addr += 4
+        return addr
+    HANDLER, UCODE = 0x400, 0x800
+    pc = 0
+    pc = emit(pc, *li(6, DRAM), *li(7, 0x600DF00D), sw(7,6,0))
+    pc = mml_setup(emit, pc, HANDLER, UCODE, set_mml)
+    pc = emit(pc, *li(8, 0x1234))
+    pc = emit(pc, *li(5, 0x1800), csrrc(0, MSTATUS, 5))        # MPP=U
+    pc = emit(pc, *li(5, UCODE), csrrw(0, MEPC, 5), mret())
+    pc = emit(pc, jal(0,0))
+
+    u = UCODE
+    u = emit(u, *li(6, DRAM), lw(8,6,0))
+    if set_mml:
+        u = tohost_code(emit, u, 6)                  # code 6: U read an M-only rule
+    else:
+        u = emit(u, *li(9, 0x600DF00D), bne(8,9, 0)); b = u-4
+        u = tohost_code(emit, u, 1)                  # PASS
+        f = u; u = tohost_code(emit, u, 7)
+        prog[b] = bne(8,9, f-b)
+
+    h = HANDLER
+    if set_mml:
+        h = emit(h, csrrs(20, MCAUSE, 0), addi(22,0,5), bne(20,22, 0)); bc = h-4
+        h = emit(h, csrrs(21, MTVAL, 0), *li(23, DRAM), bne(21,23, 0)); bt = h-4
+        h = emit(h, *li(26, 0x1234), bne(8,26, 0)); br = h-4
+        h = tohost_code(emit, h, 1)                  # PASS
+        fc = h; h = tohost_code(emit, h, 3)
+        ft = h; h = tohost_code(emit, h, 4)
+        fr = h; h = tohost_code(emit, h, 9)
+        prog[bc] = bne(20,22, fc-bc); prog[bt] = bne(21,23, ft-bt)
+        prog[br] = bne(8,26, fr-br)
+    else:
+        h = tohost_code(emit, h, 5)
+    return prog
+
+# mml_cfg: Smepmp CSR write rules.
+#   * RLB can be set while no rule is locked (control), and cleared again.
+#   * With MML=1 and RLB=0, a pmpcfg write that adds an executable M-only rule
+#     (L=1 X=1 W=0) or a locked shared-code rule (L=1 R=0 W=1) is ignored,
+#     while an ordinary rule (L=0 R W) is still written (control).
+#   * With RLB=0 and a locked rule present, RLB cannot be set.
+def build_mml_cfg():
+    prog = {}
+    def emit(addr, *ins):
+        for x in ins:
+            prog[addr] = x; addr += 4
+        return addr
+    HANDLER, UCODE = 0x400, 0x800
+    br = []
+    pc = 0
+    # RLB settable with no locked rule (read back bit 2), then clear it
+    pc = emit(pc, csrrwi(0, MSECCFG, 4), csrrs(10, MSECCFG, 0), andi(10,10,4),
+              addi(11,0,4), bne(10,11, 0)); br.append((pc-4, 10, 11, 7))
+    pc = emit(pc, csrrwi(0, MSECCFG, 0))
+    pc = mml_setup(emit, pc, HANDLER, UCODE, True)
+    # executable M-only rule in pmp4cfg -> ignored
+    pc = emit(pc, *li(5, PMP_L|PMP_NAPOT|PMP_X), csrrw(0, PMPCFG1, 5),
+              csrrs(10, PMPCFG1, 0), bne(10,0, 0)); br.append((pc-4, 10, 0, 3))
+    # locked shared-code rule in pmp4cfg -> ignored
+    pc = emit(pc, *li(5, PMP_L|PMP_NAPOT|PMP_W), csrrw(0, PMPCFG1, 5),
+              csrrs(10, PMPCFG1, 0), bne(10,0, 0)); br.append((pc-4, 10, 0, 4))
+    # ordinary rule -> written
+    pc = emit(pc, *li(5, PMP_NAPOT|PMP_R|PMP_W), csrrw(0, PMPCFG1, 5),
+              csrrs(10, PMPCFG1, 0), *li(11, PMP_NAPOT|PMP_R|PMP_W), bne(10,11, 0))
+    br.append((pc-4, 10, 11, 5))
+    # RLB with locked rules present -> stays 0
+    pc = emit(pc, csrrwi(0, MSECCFG, 5), csrrs(10, MSECCFG, 0), andi(10,10,4),
+              bne(10,0, 0)); br.append((pc-4, 10, 0, 6))
+    pc = tohost_code(emit, pc, 1)                    # PASS
+    for (at, ra, rb, code) in br:
+        f = pc; pc = tohost_code(emit, pc, code)
+        prog[at] = bne(ra, rb, f-at)
+    h = HANDLER
+    h = tohost_code(emit, h, 8)                      # no trap expected
+    return prog
+
+# uamo: U-mode AMOSWAP.W to a read-only PMP region -> store/AMO access-fault
+#   (mcause=7, mtval=addr); rd and memory unchanged. Neg control: with R/W the
+#   swap returns the old word and stores the new one.
+def amoswap_w(rd, rs2, rs1): return R(0x04, rs2, rs1, 2, rd, 0x2F)
+
+def build_uamo(readonly):
+    prog = {}
+    def emit(addr, *ins):
+        for x in ins:
+            prog[addr] = x; addr += 4
+        return addr
+    HANDLER, UCODE = 0x400, 0x800
+    cfg0 = PMP_NAPOT | PMP_R | (0 if readonly else PMP_W)
+    cfg1 = PMP_NAPOT | PMP_R | PMP_W | PMP_X
+    pc = 0
+    pc = emit(pc, *li(5, HANDLER), csrrw(0, MTVEC, 5))
+    pc = emit(pc, *li(6, DRAM), *li(7, 0x600DF00D), sw(7,6,0))
+    pc = emit(pc, *li(5, napot_addr(DRAM, 64)), csrrw(0, PMPADDR0, 5))
+    pc = emit(pc, *li(5, NAPOT_ALL), csrrw(0, PMPADDR1, 5))
+    pc = emit(pc, *li(5, (cfg1<<8)|cfg0), csrrw(0, PMPCFG0, 5))
+    pc = emit(pc, *li(8, 0x1234))
+    pc = emit(pc, *li(5, 0x1800), csrrc(0, MSTATUS, 5))        # MPP=U
+    pc = emit(pc, *li(5, UCODE), csrrw(0, MEPC, 5), mret())
+    pc = emit(pc, jal(0,0))
+
+    u = UCODE
+    u = emit(u, *li(6, DRAM), *li(9, 0x0BADCAFE), amoswap_w(8, 9, 6))
+    if readonly:
+        u = tohost_code(emit, u, 6)                  # code 6: AMO did not trap
+    else:
+        u = emit(u, *li(10, 0x600DF00D), bne(8,10, 0)); b1 = u-4
+        u = emit(u, lw(11,6,0), bne(11,9, 0)); b2 = u-4
+        u = tohost_code(emit, u, 1)                  # PASS
+        f1 = u; u = tohost_code(emit, u, 7)          # code 7: wrong old value
+        f2 = u; u = tohost_code(emit, u, 8)          # code 8: memory not written
+        prog[b1] = bne(8,10, f1-b1); prog[b2] = bne(11,9, f2-b2)
+
+    h = HANDLER
+    if readonly:
+        h = emit(h, csrrs(20, MCAUSE, 0), addi(22,0,7), bne(20,22, 0)); bc = h-4
+        h = emit(h, csrrs(21, MTVAL, 0), *li(23, DRAM), bne(21,23, 0)); bt = h-4
+        h = emit(h, *li(26, 0x1234), bne(8,26, 0)); br = h-4
+        h = emit(h, *li(6, DRAM), lw(11,6,0), *li(27, 0x600DF00D), bne(11,27, 0)); bm = h-4
+        h = tohost_code(emit, h, 1)                  # PASS
+        fc = h; h = tohost_code(emit, h, 3)          # wrong mcause
+        ft = h; h = tohost_code(emit, h, 4)          # wrong mtval
+        fr = h; h = tohost_code(emit, h, 9)          # rd was written
+        fm = h; h = tohost_code(emit, h, 10)         # memory was written
+        prog[bc] = bne(20,22, fc-bc); prog[bt] = bne(21,23, ft-bt)
+        prog[br] = bne(8,26, fr-br);  prog[bm] = bne(11,27, fm-bm)
+    else:
+        h = tohost_code(emit, h, 5)                  # unexpected trap
+    return prog
+
+# mtvec_mode: only direct mode is implemented, so mtvec.MODE is WARL 0: a write
+#   of HANDLER|1 must read back as HANDLER, and an ecall must enter HANDLER.
+def build_mtvec_mode():
+    prog = {}
+    def emit(addr, *ins):
+        for x in ins:
+            prog[addr] = x; addr += 4
+        return addr
+    HANDLER = 0x400
+    pc = 0
+    pc = emit(pc, *li(5, HANDLER | 1), csrrw(0, MTVEC, 5), csrrs(10, MTVEC, 0),
+              *li(11, HANDLER), bne(10,11, 0)); b = pc-4
+    pc = emit(pc, ecall())
+    pc = tohost_code(emit, pc, 4)                    # code 4: ecall did not trap
+    f = pc; pc = tohost_code(emit, pc, 3)            # code 3: MODE bits read back
+    prog[b] = bne(10,11, f-b)
+    h = HANDLER
+    h = emit(h, csrrs(20, MCAUSE, 0), addi(22,0,11), bne(20,22, 0)); bc = h-4
+    h = tohost_code(emit, h, 1)                      # PASS
+    fc = h; h = tohost_code(emit, h, 5)              # code 5: wrong mcause
+    prog[bc] = bne(20,22, fc-bc)
+    return prog
+
 if __name__ == "__main__":
     write_hex("ustore_fault", build_ustore(readonly=True))
     write_hex("ustore_ok",    build_ustore(readonly=False))
@@ -335,4 +626,14 @@ if __name__ == "__main__":
     write_hex("ifetch_ok",    build_ifetch(noexec=False))
     write_hex("ucsr_u",       build_ucsr(from_user=True))
     write_hex("ucsr_m",       build_ucsr(from_user=False))
+    write_hex("uload_fault",  build_uload(noread=True))
+    write_hex("uload_ok",     build_uload(noread=False))
+    write_hex("mml_mexec",    build_mml_mexec(set_mml=True))
+    write_hex("mml_mexec_off",build_mml_mexec(set_mml=False))
+    write_hex("mml_uload",    build_mml_uload(set_mml=True))
+    write_hex("mml_uload_off",build_mml_uload(set_mml=False))
+    write_hex("mml_cfg",      build_mml_cfg())
+    write_hex("mtvec_mode",   build_mtvec_mode())
+    write_hex("uamo_fault",   build_uamo(readonly=True))
+    write_hex("uamo_ok",      build_uamo(readonly=False))
     print("done.")

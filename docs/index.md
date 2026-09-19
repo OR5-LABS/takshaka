@@ -18,16 +18,16 @@ cores.
 - A **3-stage in-order pipeline** with full forwarding and no load-use stall.
 - A **dynamic branch predictor** — gshare direction predictor + BTB + return
   address stack.
-- Optional **M/U privilege** with user-trap delegation, an **8-region PMP** (with Smepmp), and hardware
-  **debug triggers** in the `SECURE` configuration.
+- Optional **M/U privilege** with user-trap delegation and an **8-region PMP** (with Smepmp)
+  in the `SECURE` configuration, and hardware **debug triggers** in both builds.
 - Hardware **misaligned** load/store support.
 - **RISC-V External Debug** (JTAG DTM + Debug Module).
 - An **AXI4-Lite** bus wrapper.
 - A ready-to-run **FreeRTOS** port.
 - A deep **verification** flow: self-checking tests, golden-model
-  co-simulation, RVFI, a Debug-Module self-check, and constrained-random
-  testing.
-- ~**3.16 CoreMark/MHz** on RTL (no caches).
+  co-simulation, RVFI, a Debug-Module self-check, and the official
+  riscv-tests ISA suites.
+- **2.92 CoreMark/MHz** on RTL (no caches).
 
 ## Where to start
 

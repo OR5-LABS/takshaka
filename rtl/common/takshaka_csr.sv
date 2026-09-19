@@ -32,7 +32,8 @@ module takshaka_csr
   output logic [1:0]        priv_o,      // current privilege (11=M, 00=U)
   output logic              fetch_m_o,   // instruction-fetch priv is M
   output logic              data_m_o,    // data-access priv is M (honours MPRV)
-  output logic              mmwp_o,      // mseccfg.MMWP (ePMP M-mode whitelist)
+  output logic              mmwp_o,      // mseccfg.MMWP (Smepmp M-mode whitelist)
+  output logic              mml_o,       // mseccfg.MML  (Smepmp machine mode lockdown)
   output logic [127:0]      pmpcfg_o,    // 16 pmpNcfg bytes
   output logic [511:0]      pmpaddr_o,   // 16 pmpaddrN words
 
@@ -105,6 +106,18 @@ module takshaka_csr
   assign fetch_m_o = (priv == 2'b11);
   assign data_m_o  = (U_MODE && mstatus[17]) ? (mstatus[12:11]==2'b11) : (priv==2'b11);
   assign mmwp_o    = mseccfg[1];
+  assign mml_o     = mseccfg[0];
+  // Smepmp: with MML=1 and RLB=0, a pmpcfg write may not create a new executable
+  // M-mode-only rule or a locked shared-code rule; such a write is ignored.
+  function automatic logic mml_blocked(input logic [7:0] c);
+    mml_blocked = c[7] && ((c[2] && !c[1]) || (!c[0] && c[1]));
+  endfunction
+  // Smepmp: RLB cannot be set while RLB=0 and any rule is locked.
+  logic any_locked;
+  always_comb begin
+    any_locked = 1'b0;
+    for (int k = 0; k < PMP_REGIONS; k++) any_locked |= pmpcfg_r[k*8 + 7];
+  end
   assign pmpcfg_o  = pmpcfg_r;
   assign pmpaddr_o = pmpaddr_r;
 
@@ -238,22 +251,38 @@ module takshaka_csr
         end
         else if (PMP_REGIONS > 0 && is_pmpcfg) begin
           for (jb = 0; jb < 4; jb = jb + 1)
-            if (!pmpcfg_r[(csr_addr[1:0]*4 + jb)*8 + 7] || rlb)   // per-entry lock
+            if ((!pmpcfg_r[(csr_addr[1:0]*4 + jb)*8 + 7] || rlb) &&   // per-entry lock
+                !(mseccfg[0] && !rlb && mml_blocked(csr_wdata[jb*8 +: 8])))
               pmpcfg_r[(csr_addr[1:0]*4 + jb)*8 +: 8] <= csr_wdata[jb*8 +: 8];
         end
         else if (PMP_REGIONS > 0 && csr_addr == 12'h747) begin    // mseccfg
           mseccfg[0] <= mseccfg[0] | csr_wdata[0];   // MML  sticky
           mseccfg[1] <= mseccfg[1] | csr_wdata[1];   // MMWP sticky
-          mseccfg[2] <= csr_wdata[2];                // RLB
+          if (rlb || !any_locked)                     // RLB (Smepmp lock rule)
+            mseccfg[2] <= csr_wdata[2];
         end
         else unique case (csr_addr)
-          CSR_MSTATUS  : mstatus  <= csr_wdata;
+          CSR_MSTATUS  : begin
+            mstatus <= csr_wdata;
+            // MPP is WARL: it only holds an implemented privilege mode (M, and U
+            // when U_MODE); an unsupported value (S or reserved) is not stored.
+            if (!U_MODE)                         mstatus[12:11] <= 2'b11;
+            else if (csr_wdata[12:11] != 2'b11)  mstatus[12:11] <= 2'b00;
+          end
           CSR_MIE      : mie      <= csr_wdata;
-          CSR_MTVEC    : mtvec    <= csr_wdata;
+          // only direct mode is implemented: mtvec.MODE (bits 1:0) reads as 0
+          CSR_MTVEC    : mtvec    <= {csr_wdata[XLEN-1:2], 2'b00};
           CSR_MSCRATCH : mscratch <= csr_wdata;
           CSR_MEPC     : mepc     <= csr_wdata;
           CSR_MCAUSE   : mcause   <= csr_wdata;
           CSR_MTVAL    : mtval    <= csr_wdata;
+          // machine counters are writable; a write replaces this cycle's
+          // increment (full-width assignments, so the other half does not pick
+          // up the increment either)
+          CSR_MCYCLE   : mcycle   <= {mcycle[63:32], csr_wdata};
+          CSR_MCYCLEH  : mcycle   <= {csr_wdata, mcycle[31:0]};
+          CSR_MINSTRET : minstret <= {minstret[63:32], csr_wdata};
+          CSR_MINSTRETH: minstret <= {csr_wdata, minstret[31:0]};
           // Zihpm programmable counters + event selectors (writable)
           CSR_MHPMCOUNTER3 : mhpmcounter[3][31:0]  <= csr_wdata;
           CSR_MHPMCOUNTER4 : mhpmcounter[4][31:0]  <= csr_wdata;

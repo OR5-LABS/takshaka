@@ -27,8 +27,8 @@ import os, re, subprocess, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CORE = os.path.dirname(HERE)                       # .../takshaka
-G    = os.path.join(CORE, "..", "gandiva", "rtl")
-DBG  = os.path.join(CORE, "..", "kavacha", "rtl", "kavacha_debug.sv")
+C    = "rtl/common"                                # shared leaf cells (this repo)
+DBG  = "rtl/takshaka_debug.sv"
 SIM  = os.path.join(CORE, "sim", "tb_takshaka_rtos")
 POS  = os.path.join(HERE, "build", "rtos.hex")
 NEG  = os.path.join(HERE, "build", "rtos_neg.hex")
@@ -41,13 +41,14 @@ def sh(cmd, **kw):
 
 def compile_tb():
     src = [
-        f"{G}/gandiva_pkg.sv", f"{G}/gandiva_alu.sv", f"{G}/gandiva_regfile.sv",
-        f"{G}/gandiva_muldiv.sv", f"{G}/gandiva_csr.sv", f"{G}/gandiva_rvc.sv",
-        f"{G}/gandiva_immgen.sv", f"{G}/gandiva_branch.sv", f"{G}/gandiva_decode.sv",
+        f"{C}/takshaka_pkg.sv", f"{C}/takshaka_alu.sv", f"{C}/takshaka_regfile.sv",
+        f"{C}/takshaka_muldiv.sv", f"{C}/takshaka_csr.sv", f"{C}/takshaka_rvc.sv",
+        f"{C}/takshaka_immgen.sv", f"{C}/takshaka_branch.sv", f"{C}/takshaka_decode.sv",
+        f"{C}/takshaka_pmp.sv",
         DBG, "rtl/takshaka_core.sv", "rtl/takshaka_uart.sv", "rtl/takshaka_soc.sv",
         "tb/tb_takshaka_rtos.sv",
     ]
-    cmd = [VERILATOR, "--binary", "-j", "0", "-Wno-fatal", "-Wno-WIDTHEXPAND", "-Wno-WIDTHTRUNC", "--trace", "--timescale", "1ns/1ps", "--Mdir", "sim", "-o", "tb_takshaka_rtos", "-I" + G, "-Irtl"] + src
+    cmd = [VERILATOR, "--binary", "-j", "0", "-Wno-fatal", "-Wno-WIDTHEXPAND", "-Wno-WIDTHTRUNC", "--trace", "--timescale", "1ns/1ps", "--Mdir", "sim", "-o", "tb_takshaka_rtos", "-I" + C, "-Irtl"] + src
     r = sh(cmd)
     if r.returncode != 0:
         print(r.stdout); print(r.stderr)

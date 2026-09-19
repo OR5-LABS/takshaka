@@ -44,6 +44,9 @@ def main():
     print(f"[cosim] RTL retires={len(rtl)}  golden retires={len(gold)}")
 
     n = min(len(rtl), len(gold))
+    if n == 0:
+        print("[cosim] FAIL: no retire trace to compare (RTL or golden run produced none)")
+        sys.exit(3)
     for i in range(n):
         rp, ri, rwe, rd_, rv = rtl[i]
         gp, gi, gwe, gd, gv = gold[i]
@@ -63,6 +66,7 @@ def main():
               f"but common prefix of {n} matched")
         # tolerate a 1-instruction tail difference at the halting store
         if abs(len(rtl) - len(gold)) > 1:
+            print("[cosim] FAIL: trace lengths differ by more than one retire")
             sys.exit(2)
 
     print(f"[cosim] MATCH — {n} retires identical. RTL is ISA-correct.")

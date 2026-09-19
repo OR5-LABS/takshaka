@@ -12,7 +12,18 @@ cd "$(dirname "$0")"
 # kernel on first use; only the generic kernel + GCC/RISC-V port are compiled below.
 if [ ! -d FreeRTOS-Kernel ]; then
   echo "Fetching FreeRTOS-Kernel (first run)..."
-  git clone --depth 1 https://github.com/FreeRTOS/FreeRTOS-Kernel.git
+  if command -v git > /dev/null; then
+    git clone --depth 1 https://github.com/FreeRTOS/FreeRTOS-Kernel.git
+  else
+    # no git (e.g. a minimal container): fetch the same branch as a tarball
+    python3 - <<'PY'
+import io, tarfile, urllib.request, shutil, os
+url = "https://github.com/FreeRTOS/FreeRTOS-Kernel/archive/refs/heads/main.tar.gz"
+data = urllib.request.urlopen(url, timeout=120).read()
+tarfile.open(fileobj=io.BytesIO(data)).extractall(".")
+shutil.move("FreeRTOS-Kernel-main", "FreeRTOS-Kernel")
+PY
+  fi
 fi
 
 # RISC-V bare-metal GCC. Tools are taken from PATH; set RISCV_TC=/path/to/bin

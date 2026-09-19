@@ -1,8 +1,10 @@
 // ============================================================================
 // tb_takshaka.sv — Self-checking testbench for takshaka_soc.
 //
-//   vvp sim/tb_takshaka +IMEM=programs/build/smoke.hex
-//   vvp sim/tb_takshaka +IMEM=... +TRACE=1   (emit retire trace for co-sim)
+//   sim/tb_takshaka +IMEM=programs/build/smoke.hex
+//   sim/tb_takshaka +IMEM=... +TRACE=1        (emit retire trace for co-sim)
+//   sim/tb_takshaka +IMEM=... +DRAM=<hex>     (also preload DRAM at 0x8000_0000)
+//   sim/tb_takshaka +IMEM=... +MAXCYCLES=<n>  (cycle budget, default 50,000,000)
 //
 // Exit protocol: a store to tohost (0x2000_0000) ends the run.
 //   tohost == 1  -> PASS
@@ -32,8 +34,9 @@ module tb_takshaka;
     .retire_rd(retire_rd), .retire_rd_val(retire_rd_val)
   );
 
-  string imem_file;
+  string imem_file, dram_file;
   integer trace_en;
+  integer max_cycles = 50000000;   // raised for CoreMark (one iteration ~0.3M cyc)
   integer i;
 
   initial begin
@@ -43,6 +46,7 @@ module tb_takshaka;
     end
     trace_en = 0;
     if ($value$plusargs("TRACE=%d", trace_en)) ;
+    if ($value$plusargs("MAXCYCLES=%d", max_cycles)) ;
 
     // clear memories
     for (i = 0; i < 8192; i = i + 1) begin
@@ -52,6 +56,10 @@ module tb_takshaka;
 
     $display("[TB] Loading IMEM from: %s", imem_file);
     $readmemh(imem_file, dut.imem);
+    if ($value$plusargs("DRAM=%s", dram_file)) begin
+      $display("[TB] Loading DRAM from: %s", dram_file);
+      $readmemh(dram_file, dut.dram);
+    end
 
     if ($test$plusargs("VCD")) begin
       $dumpfile("tb_takshaka.vcd");
@@ -82,8 +90,8 @@ module tb_takshaka;
       else                 $display("[TB] FAIL (code %0d)", tohost);
       $finish;
     end
-    if (cycle > 50000000) begin   // raised for CoreMark (one iteration ~0.3M cyc)
-      $display("[TB] TIMEOUT — no tohost write");
+    if (cycle > max_cycles) begin
+      $display("[TB] TIMEOUT - no tohost write");
       $finish;
     end
   end

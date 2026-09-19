@@ -127,15 +127,29 @@ module tb_takshaka_axi;
   // ==========================================================================
   integer errors = 0;
 
+  // The driver changes and samples the upstream handshake only on the falling
+  // edge, half a cycle away from the rising edge where the bridge and the BFM
+  // update. Sampling right after @(posedge clk) raced with the bridge's own
+  // update of `state` (Icarus happened to read the old value, Verilator the new
+  // one, so under Verilator the request/response handshake was missed and the
+  // test timed out).
+  task automatic axi_req(input logic wr, input [ADDR_W-1:0] a, input [DATA_W-1:0] d,
+                         input [DATA_W/8-1:0] strb);
+    begin
+      @(negedge clk);
+      req_valid = 1; req_write = wr; req_addr = a; req_wdata = d; req_wstrb = strb;
+      while (!req_ready) @(negedge clk);   // accepted at the next rising edge
+      @(negedge clk);
+      req_valid = 0;
+      while (!rsp_valid) @(negedge clk);   // rsp_valid is high for one full cycle
+    end
+  endtask
+
   // returns the captured response code via rsp_out
   task automatic axi_write(input [ADDR_W-1:0] a, input [DATA_W-1:0] d,
                            input [DATA_W/8-1:0] strb, output [1:0] rsp_out);
     begin
-      @(posedge clk);
-      req_valid<=1; req_write<=1; req_addr<=a; req_wdata<=d; req_wstrb<=strb;
-      do @(posedge clk); while (!req_ready);
-      req_valid<=0;
-      do @(posedge clk); while (!rsp_valid);
+      axi_req(1'b1, a, d, strb);
       rsp_out = rsp_resp;
     end
   endtask
@@ -143,11 +157,7 @@ module tb_takshaka_axi;
   task automatic axi_read(input [ADDR_W-1:0] a, output [DATA_W-1:0] d,
                           output [1:0] rsp_out);
     begin
-      @(posedge clk);
-      req_valid<=1; req_write<=0; req_addr<=a; req_wdata<=0; req_wstrb<=0;
-      do @(posedge clk); while (!req_ready);
-      req_valid<=0;
-      do @(posedge clk); while (!rsp_valid);
+      axi_req(1'b0, a, '0, '0);
       d = rsp_rdata;
       rsp_out = rsp_resp;
     end

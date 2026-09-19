@@ -571,34 +571,43 @@ module takshaka_core
   // M, no PMP logic, behaviour byte-identical.
   localparam int NPMP = 8;
   wire [1:0]   cur_priv;
-  wire         fetch_m, data_m, mmwp_w;
+  wire         fetch_m, data_m, mmwp_w, mml_w;
   wire [127:0] pmpcfg_w;
   wire [511:0] pmpaddr_w;
   wire acc_fetch_fault, acc_load_fault, acc_store_fault;
   // Privileged-operation faults from U-mode (all illegal-instruction traps):
-  //  - access to an M-mode CSR (address bits [9:8]==11 => M-only)
+  //  - access to a CSR above User level (address bits [9:8] != 00)
   //  - MRET (a trap-return instruction; only legal in M-mode)
+  // In any mode, a CSR instruction that writes a read-only CSR (address bits
+  // [11:10] == 11, e.g. cycle / mhartid) is an illegal instruction.
   // Checked here, not in the shared CSR/decode leaf cells, so they stay untouched.
   wire priv_low        = SECURE && (cur_priv != 2'b11);
-  wire csr_priv_fault  = priv_low && d_is_csr && (sys_imm12[9:8] == 2'b11);
+  wire csr_priv_fault  = priv_low && d_is_csr && (sys_imm12[9:8] != 2'b00);
   wire mret_priv_fault = priv_low && d_is_mret;
-  wire priv_fault      = csr_priv_fault | mret_priv_fault;
+  wire csr_ro_fault    = d_is_csr && csr_do_write && (sys_imm12[11:10] == 2'b11);
+  wire priv_fault      = csr_priv_fault | mret_priv_fault | csr_ro_fault;
+  // Data access checked by the PMP: loads/stores use the ALU address; AMO / LR /
+  // SC address memory with rs1 (op1) and are checked the same way (LR = read,
+  // SC = write, AMO<op> = read + write, reported as a store/AMO access fault).
+  wire [XLEN-1:0] ls_addr = amo_valid ? op1 : alu_y;
+  wire            ls_re   = d_mem_re | (amo_valid & !is_sc);
+  wire            ls_we   = d_mem_we | (amo_valid & !is_lr);
   generate if (SECURE) begin : g_pmp
     wire pmp_fetch_fault, pmp_data_fault;
     takshaka_pmp #(.NPMP(NPMP)) u_pmp_if (    // instruction-fetch check
       .cfg(pmpcfg_w[8*NPMP-1:0]), .addrreg(pmpaddr_w[32*NPMP-1:0]),
-      .addr(fx_pc), .priv_m(fetch_m), .mmwp(mmwp_w), .do_r(1'b0), .do_w(1'b0), .do_x(1'b1),
+      .addr(fx_pc), .priv_m(fetch_m), .mmwp(mmwp_w), .mml(mml_w), .do_r(1'b0), .do_w(1'b0), .do_x(1'b1),
       .fault(pmp_fetch_fault)
     );
     takshaka_pmp #(.NPMP(NPMP)) u_pmp_ls (    // load/store check (post-address)
       .cfg(pmpcfg_w[8*NPMP-1:0]), .addrreg(pmpaddr_w[32*NPMP-1:0]),
-      .addr(alu_y), .priv_m(data_m), .mmwp(mmwp_w),
-      .do_r(d_mem_re), .do_w(d_mem_we), .do_x(1'b0),
+      .addr(ls_addr), .priv_m(data_m), .mmwp(mmwp_w), .mml(mml_w),
+      .do_r(ls_re), .do_w(ls_we), .do_x(1'b0),
       .fault(pmp_data_fault)
     );
     assign acc_fetch_fault = fx_valid && pmp_fetch_fault;
-    assign acc_load_fault  = fx_valid && d_mem_re && pmp_data_fault;
-    assign acc_store_fault = fx_valid && d_mem_we && pmp_data_fault;
+    assign acc_load_fault  = fx_valid && ls_re && !ls_we && pmp_data_fault;
+    assign acc_store_fault = fx_valid && ls_we && pmp_data_fault;
   end else begin : g_nopmp
     assign acc_fetch_fault = 1'b0;
     assign acc_load_fault  = 1'b0;
@@ -675,7 +684,7 @@ module takshaka_core
                         acc_store_fault   ? 4'd7  :                   // store access-fault
                         trig_to_exc       ? CAUSE_BREAKPOINT : CAUSE_ILLEGAL;
   wire [XLEN-1:0] ex_tval = acc_fetch_fault              ? fx_pc :
-                            (acc_load_fault|acc_store_fault) ? alu_y :
+                            (acc_load_fault|acc_store_fault) ? ls_addr :
                             illegal_all                   ? fx_instr :
                             trig_to_exc                   ? trig_tval_w : 32'b0;
   logic [XLEN-1:0] mtvec_w, mepc_w;
@@ -791,7 +800,7 @@ module takshaka_core
     .csr_addr(csr_addr_eff), .csr_rdata(csr_rdata),
     .csr_we(csr_we_eff && !is_trig_csr && !is_ucsr),
     .csr_wdata(csr_wdata_eff),
-    .priv_o(cur_priv), .fetch_m_o(fetch_m), .data_m_o(data_m), .mmwp_o(mmwp_w),
+    .priv_o(cur_priv), .fetch_m_o(fetch_m), .data_m_o(data_m), .mmwp_o(mmwp_w), .mml_o(mml_w),
     .pmpcfg_o(pmpcfg_w), .pmpaddr_o(pmpaddr_w),
     // delegated-to-U exceptions are handled by the local N block, not the M CSR
     .trap_set(m_trap_set),
