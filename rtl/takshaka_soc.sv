@@ -2,7 +2,8 @@
 // takshaka_soc.sv — Minimal SoC wrapper for simulation/bring-up.
 //
 // Address map:
-//   0x0000_0000 .. : IMEM  (program, word array, combinational read)
+//   0x0000_0000 .. : IMEM  (program, word array, combinational read; data-port
+//                    stores reach it only with IMEM_DATA_WRITE=1)
 //   0x0200_xxxx    : CLINT (mtime/mtimecmp/msip)
 //   0x1000_0000    : UART  (console: 0x0 tx/status, 0x4 rx, 0x8 baud)
 //   0x2000_0000    : tohost (store here to end the test: 1=PASS, 2=FAIL)
@@ -14,6 +15,22 @@
 // ============================================================================
 `include "takshaka_pkg.sv"
 
+// Build-time selection of the SECURE configuration (M/U privilege, PMP and
+// user-trap delegation): pass -DTAKSHAKA_SECURE, or override the SECURE parameter.
+// -DTAKSHAKA_IMEM_WRITABLE (or IMEM_DATA_WRITE=1) lets data-port stores write IMEM
+// (self-modifying / test code that keeps data in its code section); by default
+// such stores are dropped.
+`ifdef TAKSHAKA_IMEM_WRITABLE
+  `define TAKSHAKA_SOC_IMEM_WRITE 1'b1
+`else
+  `define TAKSHAKA_SOC_IMEM_WRITE 1'b0
+`endif
+`ifdef TAKSHAKA_SECURE
+  `define TAKSHAKA_SOC_SECURE 1'b1
+`else
+  `define TAKSHAKA_SOC_SECURE 1'b0
+`endif
+
 module takshaka_soc
   import takshaka_pkg::*;
 #(
@@ -21,7 +38,9 @@ module takshaka_soc
   parameter int unsigned DRAM_WORDS = 8192,
   parameter logic [XLEN-1:0] DRAM_BASE   = 32'h8000_0000,
   parameter logic [XLEN-1:0] TOHOST_ADDR = 32'h2000_0000,
-  parameter logic [XLEN-1:0] UART_BASE   = 32'h1000_0000
+  parameter logic [XLEN-1:0] UART_BASE   = 32'h1000_0000,
+  parameter bit              SECURE      = `TAKSHAKA_SOC_SECURE,
+  parameter bit              IMEM_DATA_WRITE = `TAKSHAKA_SOC_IMEM_WRITE
 )(
   input  logic              clk,
   input  logic              rst,
@@ -80,7 +99,7 @@ module takshaka_soc
   logic        dm_mem_ready;
   wire core_rst = rst | ndmreset;
 
-  takshaka_core u_core (
+  takshaka_core #(.SECURE(SECURE)) u_core (
     .clk(clk), .rst(core_rst),
     .imem_addr(imem_addr), .imem_rdata(imem_rdata),
     .dmem_addr(dmem_addr), .dmem_re(dmem_re), .dmem_we(dmem_we),
@@ -146,6 +165,13 @@ module takshaka_soc
     dmem_be[1] ? dmem_wdata[15:8]  : cur_word[15:8],
     dmem_be[0] ? dmem_wdata[7:0]   : cur_word[7:0]
   };
+  wire [XLEN-1:0] cur_iword = imem[imem_didx];
+  wire [XLEN-1:0] merged_imem = {
+    dmem_be[3] ? dmem_wdata[31:24] : cur_iword[31:24],
+    dmem_be[2] ? dmem_wdata[23:16] : cur_iword[23:16],
+    dmem_be[1] ? dmem_wdata[15:8]  : cur_iword[15:8],
+    dmem_be[0] ? dmem_wdata[7:0]   : cur_iword[7:0]
+  };
 
   always_ff @(posedge clk) begin
     tohost_we_r <= 1'b0;
@@ -164,6 +190,8 @@ module takshaka_soc
       end else if (dmem_addr == TOHOST_ADDR) begin
         tohost_r    <= dmem_wdata;
         tohost_we_r <= 1'b1;
+      end else if (IMEM_DATA_WRITE && in_imem) begin
+        imem[imem_didx] <= merged_imem;
       end
     end
   end

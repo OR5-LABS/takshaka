@@ -12,4 +12,10 @@ if [ ! -f ../obj_dir/Vtb_takshaka ]; then
 fi
 
 echo "Running CoreMark on Takshaka simulation..."
-../obj_dir/Vtb_takshaka +IMEM=src/coremark.hex
+log=$(mktemp)
+../obj_dir/Vtb_takshaka +IMEM=src/coremark.hex | tee "$log"
+# the run must end with the testbench's PASS verdict (tohost = 1)
+if grep -qE 'FAIL|TIMEOUT' "$log" || ! grep -q '^\[TB\] PASS' "$log"; then
+  rm -f "$log"; echo "CoreMark: FAIL (no [TB] PASS verdict)"; exit 1
+fi
+rm -f "$log"

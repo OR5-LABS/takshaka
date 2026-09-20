@@ -3,7 +3,7 @@
 Takshaka has a **dynamic branch predictor** in the fetch stage. Because branch
 resolution otherwise costs a pipeline bubble on every taken branch, prediction
 is the single largest contributor to the core's throughput (and the main reason
-it reaches ~3.16 CoreMark/MHz).
+it reaches 2.92 CoreMark/MHz, measured with `coremark/run_coremark.sh`).
 
 ## Components
 

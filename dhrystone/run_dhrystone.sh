@@ -17,4 +17,12 @@ if [ ! -f ../obj_dir/Vtb_takshaka ]; then
 fi
 
 echo "Running Dhrystone on Takshaka simulation..."
-../obj_dir/Vtb_takshaka +IMEM=src/dhrystone.hex
+# cycle budget scales with the run count (about 330 cycles per run, plus setup)
+MAXCYC=$(( RUNS * 500 + 20000000 ))
+log=$(mktemp)
+../obj_dir/Vtb_takshaka +IMEM=src/dhrystone.hex +MAXCYCLES="$MAXCYC" | tee "$log"
+# the run must end with the testbench's PASS verdict (tohost = 1)
+if grep -qE 'FAIL|TIMEOUT' "$log" || ! grep -q '^\[TB\] PASS' "$log"; then
+  rm -f "$log"; echo "Dhrystone: FAIL (no [TB] PASS verdict)"; exit 1
+fi
+rm -f "$log"

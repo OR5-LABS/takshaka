@@ -9,26 +9,41 @@ on:
 
 jobs:
   build-and-test:
-    name: Build & self-checking tests (Icarus Verilog)
+    name: Build & self-checking tests (Verilator)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Icarus Verilog
-        run: sudo apt-get update && sudo apt-get install -y iverilog
+      - name: Install Verilator
+        run: sudo apt-get update && sudo apt-get install -y verilator
 
       - uses: actions/setup-python@v5
         with:
           python-version: "3.x"
 
-      # Smoke test: compile the core + SoC and run the self-checking program.
-      - name: Smoke test
-        run: bash build.sh
+      # RISC-V GCC with newlib (needed by run_isa.sh, the FPGA firmware, the
+      # FreeRTOS demo and the benchmarks). The build scripts use RISCV_TC.
+      - name: Install xPack RISC-V GCC 13.2.0-2
+        run: |
+          curl -sSL https://github.com/xpack-dev-tools/riscv-none-elf-gcc-xpack/releases/download/v13.2.0-2/xpack-riscv-none-elf-gcc-13.2.0-2-linux-x64.tar.gz | tar -xz -C "$HOME"
+          echo "RISCV_TC=$HOME/xpack-riscv-none-elf-gcc-13.2.0-2/bin" >> "$GITHUB_ENV"
+          echo "$HOME/xpack-riscv-none-elf-gcc-13.2.0-2/bin" >> "$GITHUB_PATH"
 
-      # Golden co-simulation: lock-step the RTL against the RV32IM ISA model.
-      - name: Golden co-simulation
-        run: bash build.sh cosim
+      # smoke, cosim, rvfi, zcb, debug, priv, axi, fpga and the official
+      # riscv-tests (run_isa.sh), compared with tests/expected.txt
+      - name: Test suite (run_tests.sh)
+        run: bash run_tests.sh
 
-      # RVFI (RISC-V Formal Interface) self-check.
-      - name: RVFI self-check
-        run: bash build.sh rvfi
+      - name: Show test logs on failure
+        if: failure()
+        run: tail -n 60 build/test-logs/*.log
+
+      # FreeRTOS demo + its tick-disabled negative control
+      - name: FreeRTOS demo
+        run: bash build.sh rtos
+
+      - name: CoreMark (100 iterations)
+        run: bash coremark/run_coremark.sh
+
+      - name: Dhrystone (100000 runs)
+        run: bash dhrystone/run_dhrystone.sh 100000

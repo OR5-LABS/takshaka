@@ -33,7 +33,7 @@ Expected output:
 | `build.sh cosim` | run smoke, then lock-step co-simulate against the golden RV32IM ISA model |
 | `build.sh rvfi` | build the RVFI (RISC-V Formal Interface) self-check |
 | `build.sh debug` | JTAG / Debug-Module self-check (halt / GPR access / resume) |
-| `build.sh priv` | `SECURE` config: M/U/N privilege + PMP + trigger directed tests |
+| `build.sh priv` | `SECURE` config: M/U privilege, user-trap delegation, PMP + trigger directed tests |
 | `build.sh axi` | AXI4-Lite master bridge, exercised against a slave-memory BFM |
 | `build.sh rtos` | build and run the FreeRTOS preemptive multitasking demo |
 | `build.sh clean` | remove build artifacts |

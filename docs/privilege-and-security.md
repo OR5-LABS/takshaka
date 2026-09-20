@@ -24,8 +24,11 @@ The `SECURE` core includes an **8-region PMP**:
 - **Permissions:** read / write / execute, checked on instruction fetch and on
   load/store *after* address generation.
 - **Locking:** locked entries apply to Machine mode too.
-- **ePMP (`mseccfg`):** enhanced-PMP semantics (Machine-mode whitelisting,
-  rule-lock bypass) for a hardened memory model.
+- **Smepmp (`mseccfg`):** enhanced-PMP semantics: machine mode lockdown (`MML`,
+  enforced with the Smepmp 1.0 permission table and its `pmpcfg` write rules),
+  Machine-mode whitelisting (`MMWP`) and rule-lock bypass (`RLB`, which cannot
+  be set while a rule is locked)
+  for a hardened memory model.
 
 A U-mode access that violates a PMP region raises a precise access fault
 (instruction = cause 1, load = cause 5, store/AMO = cause 7) with the faulting

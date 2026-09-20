@@ -24,15 +24,17 @@ def main():
     repo = os.path.dirname(here)
     ap = argparse.ArgumentParser()
     ap.add_argument("--hex", required=True)
-    ap.add_argument("--sim", required=True, help="compiled vvp image")
+    ap.add_argument("--sim", required=True, help="compiled simulator (Verilator binary; or a vvp image when --vvp is set)")
     ap.add_argument("--vvp", default=os.environ.get("VVP", "vvp"))
     ap.add_argument("--golden", default=os.path.join(here, "golden_rv32im.py"))
     ap.add_argument("--max", type=int, default=100000)
     a = ap.parse_args()
 
+    cmd = [a.sim, f"+IMEM={a.hex}", "+TRACE=1"]
+    if a.vvp:
+        cmd.insert(0, a.vvp)
     rtl_raw = subprocess.run(
-        [a.vvp, a.sim, f"+IMEM={a.hex}", "+TRACE=1"],
-        capture_output=True, text=True).stdout
+        cmd, capture_output=True, text=True).stdout
     gold_raw = subprocess.run(
         [sys.executable, a.golden, a.hex, str(a.max)],
         capture_output=True, text=True).stdout
@@ -42,6 +44,9 @@ def main():
     print(f"[cosim] RTL retires={len(rtl)}  golden retires={len(gold)}")
 
     n = min(len(rtl), len(gold))
+    if n == 0:
+        print("[cosim] FAIL: no retire trace to compare (RTL or golden run produced none)")
+        sys.exit(3)
     for i in range(n):
         rp, ri, rwe, rd_, rv = rtl[i]
         gp, gi, gwe, gd, gv = gold[i]
@@ -61,6 +66,7 @@ def main():
               f"but common prefix of {n} matched")
         # tolerate a 1-instruction tail difference at the halting store
         if abs(len(rtl) - len(gold)) > 1:
+            print("[cosim] FAIL: trace lengths differ by more than one retire")
             sys.exit(2)
 
     print(f"[cosim] MATCH — {n} retires identical. RTL is ISA-correct.")
